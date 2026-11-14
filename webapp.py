@@ -37,6 +37,7 @@ from categorizer import Categorizer, FALLBACK, parse_rules
 from collector import normalize_member_update, normalize_update
 from jalali import format_ts, now_str
 from report import build_report
+from version import APP_NAME, VERSION, VERSION_LABEL
 from storage import (
     import_csv,
     import_json,
@@ -423,6 +424,8 @@ def api_state():
             "error": S.error,
             "draining": S.draining,
             "raw_count": len(S.raw),
+            "version": VERSION,
+            "app_name": APP_NAME,
         }
     return jsonify(state)
 
@@ -1149,7 +1152,7 @@ def _find_free_port(start=5000, tries=10):
 def main():
     port = _find_free_port(int(os.environ.get("PORT", 5000)))
     url = f"http://127.0.0.1:{port}"
-    print(f"Bale Chat Mosharket (نسخه ۴) روی {url} در حال اجراست — مرورگر باز می‌شود ...")
+    print(f"{APP_NAME} — {VERSION_LABEL} — روی {url} در حال اجراست — مرورگر باز می‌شود ...")
     if _current_token():
         # اگر قبلاً توکن ذخیره شده، دریافت زنده بلافاصله و بدون دکمه آغاز می‌شود
         threading.Timer(0.5, _ensure_worker).start()

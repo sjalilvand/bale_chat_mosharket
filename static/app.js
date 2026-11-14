@@ -130,6 +130,10 @@ async function refresh() {
   try {
     const s = await fetch("/api/state").then((r) => r.json());
     renderBot(s);
+    if (s.version) {
+      $("verChip").textContent = "نسخه " + fa(s.version);
+      $("verFooter").textContent = "نسخه وب " + fa(s.version);
+    }
     renderProgress(s.progress);
     renderGroups(s.chat);
     renderStats(s.stats);

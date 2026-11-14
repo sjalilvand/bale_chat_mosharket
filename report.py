@@ -14,6 +14,7 @@ from collections import Counter
 from string import Template
 
 from jalali import format_ts, now_str
+from version import VERSION
 
 PALETTE = [
     "#0e9f6e", "#2563eb", "#d97706", "#dc2626", "#7c3aed",
@@ -124,7 +125,7 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 0}
   <div id="sections">
   $sections
   </div>
-  <footer>تولیدشده با برنامه Bale Chat Mosharket — دریافت و دسته‌بندی پیام‌های گروه بله</footer>
+  <footer>تولیدشده با برنامه Bale Chat Mosharket نسخه $version — دریافت و دسته‌بندی پیام‌های گروه بله</footer>
 </div>
 <script>
 function flt(c){
@@ -505,6 +506,7 @@ def build_report(messages, output_path, group_title=None, media_base=None):
         filter_buttons=filter_buttons,
         sections=sections_html,
         range=_attr(rng),
+        version=VERSION,
     )
 
     directory = os.path.dirname(os.path.abspath(output_path))

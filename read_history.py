@@ -33,6 +33,7 @@ from categorizer import Categorizer, FALLBACK, parse_rules
 from collector import normalize_member_update, normalize_update
 from report import build_report
 from storage import load_messages, save_json, save_messages
+from version import APP_NAME, VERSION_LABEL
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 SETTINGS_PATH = os.path.join(BASE, "settings.json")
@@ -261,6 +262,7 @@ def run_fetch(client, offset=0, messages=None, seen=None, categorizer=None, raw=
 
 def main():
     print("=" * 62)
+    print(f"   {APP_NAME} — {VERSION_LABEL}")
     print("   خواندن همه پیام‌های ربات بله و ساخت گزارش HTML")
     print("=" * 62)
 

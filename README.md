@@ -68,6 +68,50 @@ python main.py
 2. در داشبورد، دکمه **«ورود پیام‌های قدیمی (CSV/JSON)»** را بزنید و فایل‌های `بخش_*.csv` را انتخاب کنید.
 3. حالا گزارش شامل پیام‌های قدیمی + جدید خواهد بود.
 
+## نصب و به‌روزرسانی مستقیم از گیت‌هاب (PowerShell)
+
+**شماره نسخه برنامه** همیشه بالای داشبورد (کنار نام برنامه)، در کنسول هنگام اجرا و در پایین گزارش HTML نمایش داده می‌شود — با این می‌فهمید کدام نسخه را دارید. آخرین نسخه: **۴.۳**
+
+### روش ۱ — سریع‌ترین راه (یک اسکریپت خودکار، بدون نیاز به git)
+
+در PowerShell فقط این دو خط را بزنید (بار اول و همه به‌روزرسانی‌های بعدی همین است):
+
+```powershell
+cd $env:USERPROFILE\Desktop; mkdir bale_chat_mosharket -Force; cd bale_chat_mosharket
+Invoke-WebRequest "https://raw.githubusercontent.com/sjalilvand/bale_chat_mosharket/main/update.ps1" -OutFile "update.ps1"; powershell -ExecutionPolicy Bypass -File .\update.ps1
+```
+
+اسکریپت `update.ps1` خودکار: آخرین نسخه را از گیت‌هاب دانلود می‌کند، فایل‌های برنامه را جایگزین می‌کند (**پیام‌های ذخیره‌شده، تنظیمات و عکس‌ها حفظ می‌شوند**)، پیش‌نیازها را نصب و برنامه را اجرا می‌کند. دفعات بعد فقط خط دوم را دوباره بزنید. می‌توانید داخل پوشه برنامه، روی فایل `update.ps1` راست‌کلیک و «Run with PowerShell» بزنید.
+
+### روش ۲ — دستی با فایل ZIP (بدون نیاز به git)
+
+```powershell
+cd $env:USERPROFILE\Desktop
+Invoke-WebRequest -Uri "https://github.com/sjalilvand/bale_chat_mosharket/archive/refs/heads/main.zip" -OutFile "bale.zip"
+Expand-Archive -Path "bale.zip" -DestinationPath "." -Force
+cd bale_chat_mosharket-main
+python -m pip install -r requirements.txt
+python main.py
+```
+
+> برای حفظ پیام‌های ذخیره‌شده، همیشه همان پوشه قبلی را به‌روز کنید (خطوط اول را دوباره بزنید) و پوشه جدید نسازید.
+
+### روش ۳ — با git (پیشنهادی برای به‌روزرسانی همیشگی)
+
+```powershell
+# بار اول — دانلود و اجرا:
+cd $env:USERPROFILE\Desktop
+git clone https://github.com/sjalilvand/bale_chat_mosharket.git
+cd bale_chat_mosharket
+python -m pip install -r requirements.txt
+python main.py
+
+# به‌روزرسانی بعدی — فقط همین دو خط:
+cd $env:USERPROFILE\Desktop\bale_chat_mosharket; git pull; python main.py
+```
+
+اگر git نصب نیست: `winget install -e --id Git.Git` را بزنید، PowerShell را بسته و دوباره باز کنید.
+
 ## نکات امنیتی
 
 - **توکن ربات را در کد یا ریپوی عمومی قرار ندهید.** توکن فقط در `settings.json` روی سیستم شما ذخیره می‌شود (در `.gitignore` است).
@@ -79,6 +123,8 @@ python main.py
 | --- | --- |
 | `main.py` | نقطه ورود — اجرای سرور فلسک با انتخاب خودکار پورت آزاد |
 | `read_history.py` | ابزار مستقل «خواندن همه پیام‌ها + ساخت گزارش HTML» بدون داشبورد — `python read_history.py` |
+| `update.ps1` | اسکریپت PowerShell نصب/به‌روزرسانی مستقیم از گیت‌هاب با حفظ داده‌های کاربر |
+| `version.py` | شماره نسخه برنامه (در داشبورد، کنسول و گزارش نمایش داده می‌شود) |
 | `webapp.py` | وب‌اپلیکیشن فلسک + کلکتور پس‌زمینه + بایگانی خام + دانلود رسانه + محاسبه درصد پیشرفت |
 | `collector.py` | نرمال‌سازی همه انواع آپدیت (عکس، آلبوم، پاسخ، بازنشر، کانال) |
 | `templates/index.html` | داشبورد وب (راست‌به‌چپ) |
