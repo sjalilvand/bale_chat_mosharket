@@ -1,0 +1,455 @@
+/* Bale Chat Mosharket — نسخه وب، طراحی مدرن راست‌به‌چپ */
+
+:root {
+  --primary: #0e9f6e;
+  --primary-2: #0b7a55;
+  --accent: #14b8a6;
+  --ink: #0f172a;
+  --muted: #64748b;
+  --card: #ffffff;
+  --border: #e2e8f0;
+  --bg: #f1f7f4;
+  --danger: #dc2626;
+  --warn: #d97706;
+  --radius: 18px;
+  --shadow: 0 10px 30px rgba(13, 84, 58, .10);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: Vazirmatn, Tahoma, "Segoe UI", sans-serif;
+  margin: 0;
+  color: var(--ink);
+  background:
+    radial-gradient(1100px 500px at 100% -10%, rgba(14, 159, 110, .14), transparent 60%),
+    radial-gradient(900px 480px at 0% 110%, rgba(20, 184, 166, .12), transparent 60%),
+    var(--bg);
+  min-height: 100vh;
+}
+
+/* ---------- هدر ---------- */
+
+.hero {
+  background: linear-gradient(135deg, #0b7a55 0%, #0e9f6e 55%, #14b8a6 100%);
+  color: #fff;
+  border-radius: 0 0 26px 26px;
+  padding: 26px 30px 30px;
+  box-shadow: var(--shadow);
+}
+
+.hero-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.brand { display: flex; align-items: center; gap: 14px; }
+
+.logo {
+  width: 54px; height: 54px;
+  background: rgba(255, 255, 255, .16);
+  border: 1.5px solid rgba(255, 255, 255, .45);
+  border-radius: 16px;
+  display: grid; place-items: center;
+  font-size: 26px; font-weight: 800;
+  backdrop-filter: blur(4px);
+}
+
+.brand h1 { margin: 0; font-size: 21px; letter-spacing: .2px; }
+.brand p { margin: 3px 0 0; font-size: 12.5px; opacity: .92; }
+
+.bot-chip {
+  display: flex; align-items: center; gap: 9px;
+  background: rgba(255, 255, 255, .14);
+  border: 1px solid rgba(255, 255, 255, .35);
+  padding: 9px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  backdrop-filter: blur(4px);
+}
+
+.dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.dot.off { background: #fca5a5; }
+.dot.on { background: #86efac; box-shadow: 0 0 0 4px rgba(134, 239, 172, .25); animation: pulse 1.6s infinite; }
+
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(134, 239, 172, .25); }
+  50% { box-shadow: 0 0 0 7px rgba(134, 239, 172, .12); }
+}
+
+/* ---------- شبکه کارت‌ها ---------- */
+
+.grid {
+  max-width: 1100px;
+  margin: 22px auto 10px;
+  padding: 0 18px;
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 16px;
+}
+
+.span-12 { grid-column: span 12; }
+.span-8 { grid-column: span 8; }
+.span-6 { grid-column: span 6; }
+.span-4 { grid-column: span 4; }
+
+@media (max-width: 900px) {
+  .span-6, .span-8, .span-4 { grid-column: span 12; }
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px 22px;
+  animation: rise .5s ease both;
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.card-head h2 { margin: 0; font-size: 15.5px; }
+
+.chip {
+  font-size: 12px;
+  background: #e8f7f1;
+  color: var(--primary-2);
+  border-radius: 999px;
+  padding: 4px 12px;
+}
+
+.chip.live {
+  background: #fef3c7;
+  color: #92400e;
+  position: relative;
+  padding-right: 24px;
+}
+
+.chip.live::before {
+  content: "";
+  position: absolute;
+  right: 11px; top: 50%;
+  transform: translateY(-50%);
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--warn);
+  animation: pulse 1.4s infinite;
+}
+
+/* ---------- حلقه پیشرفت ---------- */
+
+.progress-wrap {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  flex-wrap: wrap;
+}
+
+.ring-box { position: relative; width: 132px; height: 132px; flex-shrink: 0; }
+
+.ring { width: 132px; height: 132px; transform: rotate(-90deg); }
+
+.ring-bg { fill: none; stroke: #e6efe9; stroke-width: 11; }
+
+.ring-fg {
+  fill: none;
+  stroke: url(#g);
+  stroke: var(--primary);
+  stroke-width: 11;
+  stroke-linecap: round;
+  stroke-dasharray: 326.7;
+  stroke-dashoffset: 326.7;
+  transition: stroke-dashoffset .9s cubic-bezier(.22, 1, .36, 1);
+}
+
+.ring-num {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+}
+
+.ring-num b { font-size: 26px; color: var(--primary-2); }
+.ring-num span { font-size: 11px; color: var(--muted); }
+
+.steps { flex: 1; min-width: 260px; display: flex; flex-direction: column; gap: 9px; }
+
+.step {
+  display: flex; align-items: center; gap: 12px;
+  font-size: 13px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: #fbfdfc;
+  transition: all .4s ease;
+}
+
+.step .ic {
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  display: grid; place-items: center;
+  font-size: 12px;
+  flex-shrink: 0;
+  background: #eef2f0;
+  color: var(--muted);
+  transition: all .4s ease;
+}
+
+.step.done { border-color: #bfe9d8; background: #f0faf6; }
+.step.done .ic { background: var(--primary); color: #fff; }
+
+.step .nm { flex: 1; }
+.step .wt { font-size: 11px; color: var(--muted); }
+.step .note { font-size: 11px; color: var(--primary-2); }
+
+/* ---------- فرم‌ها ---------- */
+
+.lbl { font-size: 12.5px; color: var(--muted); display: block; margin-bottom: 6px; }
+
+.row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 8px 0; }
+.row.end { justify-content: flex-end; }
+
+input[type="text"], input[type="password"], input[type="number"], textarea {
+  font-family: inherit;
+  font-size: 13.5px;
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 14px;
+  background: #fbfdfc;
+  color: var(--ink);
+  outline: none;
+  transition: border-color .25s, box-shadow .25s;
+  width: 100%;
+}
+
+.row input { flex: 1; min-width: 160px; }
+
+input:focus, textarea:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px rgba(14, 159, 110, .12);
+}
+
+textarea { resize: vertical; line-height: 1.9; direction: rtl; }
+
+.num { width: 84px !important; flex: none !important; text-align: center; }
+
+.btn {
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  color: #fff;
+  background: linear-gradient(135deg, var(--primary), var(--primary-2));
+  border-radius: 12px;
+  padding: 10px 20px;
+  transition: transform .18s ease, box-shadow .18s ease, opacity .2s;
+  box-shadow: 0 6px 16px rgba(14, 159, 110, .28);
+  text-decoration: none;
+  display: inline-block;
+}
+
+.btn:hover { transform: translateY(-2px); box-shadow: 0 9px 22px rgba(14, 159, 110, .34); }
+.btn:active { transform: none; }
+.btn:disabled { opacity: .45; cursor: not-allowed; transform: none; box-shadow: none; }
+
+.btn.ghost {
+  background: #fff;
+  color: var(--primary-2);
+  border: 1.5px solid #cfe8dd;
+  box-shadow: none;
+}
+
+.btn.ghost:hover { background: #f0faf6; box-shadow: none; }
+
+.check { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 7px; margin-top: 8px; }
+.check input { accent-color: var(--primary); }
+
+.hint { font-size: 12px; color: var(--muted); line-height: 2; margin: 8px 0 0; }
+.mini-hint { font-size: 11.5px; color: var(--muted); }
+.target-lbl { font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 6px; margin-right: auto; }
+
+/* ---------- گروه‌ها ---------- */
+
+.group-list {
+  margin-top: 8px;
+  max-height: 170px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.group-item {
+  display: flex; align-items: center; gap: 10px;
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  padding: 9px 12px;
+  font-size: 13px;
+  background: #fbfdfc;
+  transition: all .25s;
+}
+
+.group-item.sel { border-color: var(--primary); background: #f0faf6; }
+.group-item .ttl { flex: 1; font-weight: 600; }
+.group-item .tp { font-size: 11px; color: var(--muted); }
+.group-item button { font-family: inherit; font-size: 12px; cursor: pointer; border: 1.5px solid #cfe8dd; background: #fff; color: var(--primary-2); border-radius: 9px; padding: 5px 14px; }
+.group-item button:hover { background: #f0faf6; }
+
+.empty-row { font-size: 12.5px; color: var(--muted); text-align: center; padding: 14px; background: #fbfdfc; border: 1px dashed var(--border); border-radius: 12px; }
+
+.selected-chat {
+  margin-top: 10px;
+  font-size: 12.5px;
+  color: var(--primary-2);
+  background: #f0faf6;
+  border: 1px solid #cfe8dd;
+  border-radius: 12px;
+  padding: 9px 12px;
+}
+
+/* ---------- نوار خواندن ---------- */
+
+.reading { margin-top: 10px; }
+
+.reading-head {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 12.5px; color: var(--muted); margin-bottom: 6px;
+}
+
+.reading-head b { color: var(--primary-2); font-size: 13.5px; }
+
+.bar {
+  height: 14px;
+  border-radius: 999px;
+  background: #e6efe9;
+  overflow: hidden;
+}
+
+.bar i {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--primary), var(--accent));
+  transition: width .7s cubic-bezier(.22, 1, .36, 1);
+}
+
+.reading .mini-hint { display: block; margin-top: 5px; }
+
+/* ---------- لاگ ---------- */
+
+.log {
+  margin-top: 12px;
+  background: #0f172a;
+  color: #cbd5e1;
+  border-radius: 14px;
+  padding: 12px 14px;
+  height: 210px;
+  overflow: auto;
+  font-size: 11.8px;
+  line-height: 1.9;
+  direction: rtl;
+}
+
+.log .ln { display: flex; gap: 8px; padding: 2px 0; border-bottom: 1px dashed rgba(148, 163, 184, .12); }
+.log .ln:last-child { border-bottom: none; }
+.log .t { color: #64748b; flex-shrink: 0; direction: ltr; }
+.log .ln.msg .x { color: #a7f3d0; }
+.log .ln.error .x { color: #fca5a5; }
+.log .ln.info .x { color: #e2e8f0; }
+
+/* ---------- آمار ---------- */
+
+.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+
+.tile {
+  background: linear-gradient(160deg, #f7fbf9, #eef6f2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  text-align: center;
+  padding: 13px 8px;
+}
+
+.tile b { display: block; font-size: 21px; color: var(--primary-2); }
+.tile span { font-size: 11px; color: var(--muted); }
+
+.cats { display: flex; flex-wrap: wrap; gap: 7px; margin: 12px 0 4px; }
+
+.cat-chip {
+  font-size: 12px;
+  display: inline-flex; align-items: center; gap: 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 12px;
+  background: #fff;
+}
+
+.cat-chip .d { width: 9px; height: 9px; border-radius: 50%; }
+.cat-chip b { color: var(--primary-2); }
+
+.recent-head { font-size: 12.5px; color: var(--muted); margin: 10px 0 6px; }
+
+.recent { display: flex; flex-direction: column; gap: 7px; max-height: 200px; overflow: auto; }
+
+.rmsg {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  background: #fbfdfc;
+  animation: rise .4s ease both;
+}
+
+.rmsg .top { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
+.rmsg .top b { font-size: 12.5px; }
+.rmsg .top .w { color: var(--muted); font-size: 10.5px; margin-inline-start: auto; }
+.rmsg .badge { font-size: 10px; background: #e8f7f1; color: var(--primary-2); border-radius: 999px; padding: 1px 8px; }
+.rmsg .tx { color: #334155; line-height: 1.8; }
+
+/* ---------- درباره/فوتر ---------- */
+
+.about .hint { margin-bottom: 8px; }
+
+footer {
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 16px 0 26px;
+}
+
+/* ---------- توست ---------- */
+
+.toast {
+  position: fixed;
+  bottom: 22px;
+  left: 22px;
+  background: #0f172a;
+  color: #fff;
+  border-radius: 14px;
+  padding: 12px 18px;
+  font-size: 13px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .25);
+  z-index: 50;
+  max-width: 340px;
+  animation: rise .35s ease both;
+}
+
+.toast.err { background: #7f1d1d; }
+.toast.ok { background: #065f46; }
+
+.hidden { display: none !important; }

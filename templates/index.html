@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bale Chat Mosharket — دسته‌بندی پیام‌های گروه بله</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-inner">
+    <div class="brand">
+      <div class="logo">M</div>
+      <div>
+        <h1>Bale Chat Mosharket</h1>
+        <p>دریافت، دسته‌بندی و ساخت گزارش HTML از پیام‌های گروه بله</p>
+      </div>
+    </div>
+    <div class="bot-chip" id="botChip">
+      <span class="dot off" id="botDot"></span>
+      <span id="botChipText">ربات متصل نشده</span>
+    </div>
+  </div>
+</header>
+
+<main class="grid">
+
+  <!-- پیشرفت پروژه -->
+  <section class="card span-12">
+    <div class="card-head">
+      <h2>پیشرفت پروژه</h2>
+      <span class="chip" id="overallChip">۰٪</span>
+    </div>
+    <div class="progress-wrap">
+      <div class="ring-box">
+        <svg viewBox="0 0 120 120" class="ring">
+          <circle cx="60" cy="60" r="52" class="ring-bg"></circle>
+          <circle cx="60" cy="60" r="52" class="ring-fg" id="ringFg"></circle>
+        </svg>
+        <div class="ring-num">
+          <b id="ringPct">0%</b>
+          <span>پیشرفت کل</span>
+        </div>
+      </div>
+      <div class="steps" id="steps"></div>
+    </div>
+  </section>
+
+  <!-- اتصال ربات -->
+  <section class="card span-6">
+    <div class="card-head"><h2>۱) اتصال ربات</h2></div>
+    <label class="lbl" for="tokenInput">توکن ربات بله (از BotFather)</label>
+    <div class="row">
+      <input type="password" id="tokenInput" placeholder="مثال: 123456:ABC-DEF" autocomplete="off">
+      <button class="btn" id="btnConnect">اتصال</button>
+    </div>
+    <label class="check"><input type="checkbox" id="saveToken" checked> ذخیره توکن روی این سیستم (settings.json — به مخزن ارسال نمی‌شود)</label>
+    <p class="hint">در بله به BotFather@ پیام دهید و با <b>/newbot</b> ربات بسازید؛ سپس ربات را به گروه اضافه و ادمین کنید.</p>
+  </section>
+
+  <!-- گروه -->
+  <section class="card span-6">
+    <div class="card-head"><h2>۲) انتخاب گروه</h2></div>
+    <div class="row">
+      <button class="btn ghost" id="btnGroups">شناسایی گروه‌ها</button>
+      <span class="mini-hint">اگر گروه نبود، در گروه یک پیام بفرستید و دوباره تلاش کنید</span>
+    </div>
+    <div class="group-list" id="groupList">
+      <div class="empty-row">هنوز گروهی شناسایی نشده است</div>
+    </div>
+    <div class="selected-chat" id="selectedChat">هیچ گروهی انتخاب نشده — همه گروه‌ها ذخیره می‌شوند</div>
+  </section>
+
+  <!-- دسته‌بندی -->
+  <section class="card span-6">
+    <div class="card-head"><h2>۳) قوانین دسته‌بندی</h2></div>
+    <textarea id="rulesInput" rows="7" spellcheck="false"></textarea>
+    <div class="row end">
+      <button class="btn" id="btnRules">اعمال دسته‌بندی</button>
+    </div>
+    <p class="hint">قالب هر خط: <b>نام دسته: کلیدواژه۱، کلیدواژه۲</b> — پیام‌های بدون تطبیق به دسته «سایر» می‌روند.</p>
+  </section>
+
+  <!-- دریافت -->
+  <section class="card span-6" id="collectCard">
+    <div class="card-head">
+      <h2>۴) دریافت پیام‌ها</h2>
+      <span class="chip live hidden" id="liveChip">در حال دریافت</span>
+    </div>
+    <div class="row">
+      <button class="btn" id="btnStart">شروع دریافت</button>
+      <button class="btn ghost" id="btnStop" disabled>توقف</button>
+      <label class="target-lbl">هدف: <input type="number" id="targetInput" min="1" value="50" class="num"> پیام</label>
+    </div>
+    <div class="reading">
+      <div class="reading-head">
+        <span>روند پیشرفت خواندن</span>
+        <b id="readingPct">0%</b>
+      </div>
+      <div class="bar"><i id="readingBar"></i></div>
+      <span class="mini-hint" id="readingNote">۰ پیام از هدف ۵۰</span>
+    </div>
+    <div class="log" id="log"></div>
+  </section>
+
+  <!-- آمار -->
+  <section class="card span-6">
+    <div class="card-head"><h2>۵) آمار پیام‌های خوانده‌شده</h2></div>
+    <div class="tiles">
+      <div class="tile"><b id="stTotal">0</b><span>کل پیام‌ها</span></div>
+      <div class="tile"><b id="stSession">0</b><span>این نشست</span></div>
+      <div class="tile"><b id="stPeople">0</b><span>شرکت‌کنندگان</span></div>
+      <div class="tile"><b id="stCats">0</b><span>دسته‌ها</span></div>
+    </div>
+    <div class="cats" id="cats"></div>
+    <div class="recent-head">آخرین پیام‌های خوانده‌شده</div>
+    <div class="recent" id="recent"></div>
+  </section>
+
+  <!-- گزارش -->
+  <section class="card span-8">
+    <div class="card-head"><h2>۶) گزارش HTML</h2></div>
+    <p class="hint">گزارش تک‌فایلی با آمار، نمودار دسته‌ها، تاریخ شمسی و فیلتر دسته‌ها ساخته می‌شود.</p>
+    <div class="row">
+      <button class="btn" id="btnReport">ساخت گزارش</button>
+      <a class="btn ghost hidden" id="btnOpen" target="_blank" href="#">مشاهده گزارش</a>
+      <button class="btn ghost" id="btnDemo">افزودن ۱۰ پیام نمونه (تست)</button>
+    </div>
+    <div class="row">
+      <button class="btn ghost" id="btnImport">ورود پیام‌های قدیمی (CSV/JSON)</button>
+      <span class="mini-hint">خروجی CSV ابزار bale_chat_backup را همین‌جا وارد کنید</span>
+    </div>
+    <input type="file" id="importFile" accept=".csv,.json" hidden>
+  </section>
+
+  <!-- درباره -->
+  <section class="card span-4 about">
+    <div class="card-head"><h2>درباره</h2></div>
+    <p class="hint">ربات‌ها فقط پیام‌های جدید را می‌بینند؛ برای تاریخچه کامل از ابزار <b>bale_chat_backup</b> خروجی بگیرید و با «ورود پیام‌های قدیمی» اضافه کنید.</p>
+    <p class="hint" id="msgPath"></p>
+  </section>
+
+</main>
+
+<footer>ساخته‌شده برای معاونت مشارکت‌های مردمی — نسخه وب ۲.۰</footer>
+
+<div class="toast hidden" id="toast"></div>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
