@@ -22,7 +22,9 @@ async function api(path, body) {
   const resp = await fetch(path, opts);
   const data = await resp.json().catch(() => ({ ok: false, error: "پاسخ نامعتبر سرور" }));
   if (!resp.ok || data.ok === false) {
-    throw new Error(data.error || "خطای ناشناخته");
+    const err = new Error(data.error || "خطای ناشناخته");
+    err.data = data;
+    throw err;
   }
   return data;
 }
@@ -80,6 +82,8 @@ function renderStats(st) {
   $("stTotal").textContent = fa(st.total);
   $("stSession").textContent = fa(st.session);
   $("stPeople").textContent = fa(st.participants);
+  $("stPhotos").textContent = fa(st.photos || 0);
+  $("stMedia").textContent = fa(st.media || 0);
   $("stCats").textContent = fa(Object.keys(st.categories).length);
 
   const cats = Object.entries(st.categories);
@@ -96,6 +100,7 @@ function renderRecent(list) {
       <div class="top">
         <b>${esc(m.sender)}</b>
         <span class="badge">${esc(m.category)}</span>
+        ${m.media ? `<span class="badge m">${fa(m.media)} رسانه</span>` : ""}
         <span class="w">${esc(m.when)}</span>
       </div>
       <div class="tx">${esc(m.text)}</div>
@@ -151,15 +156,19 @@ $("btnConnect").onclick = guard(async () => {
 
 $("btnGroups").onclick = guard(async () => {
   const r = await api("/api/groups", {});
+  renderGroupList(r.groups);
+});
+
+function renderGroupList(groups) {
   const box = $("groupList");
-  if (!r.groups.length) {
-    box.innerHTML = `<div class="empty-row">گفتگویی در ۲۴ ساعت اخیر پیدا نشد؛ در گروه یک پیام بفرستید و دوباره تلاش کنید</div>`;
+  if (!groups.length) {
+    box.innerHTML = `<div class="empty-row">گفتگویی پیدا نشد؛ ربات را به گروه اضافه کنید یا در گروه یک پیام بفرستید و دوباره تلاش کنید</div>`;
     return;
   }
-  box.innerHTML = r.groups.map((g) => `
+  box.innerHTML = groups.map((g) => `
     <div class="group-item" data-id="${esc(g.id)}" data-title="${esc(g.title)}">
       <span class="ttl">${esc(g.title)}</span>
-      <span class="tp">${esc(g.type)} · ${fa(g.count)} پیام</span>
+      <span class="tp">${esc(g.type_label || g.type)} · ${fa(g.count)} پیام</span>
       <button>انتخاب</button>
     </div>`).join("");
   box.querySelectorAll("button").forEach((b) => {
@@ -175,6 +184,35 @@ $("btnGroups").onclick = guard(async () => {
       refresh();
     });
   });
+}
+
+$("btnAllGroups").onclick = guard(async () => {
+  await api("/api/group/select", { id: "all" });
+  toast("حالت «همه گفتگوها» فعال شد", "ok");
+  refresh();
+});
+
+$("btnAddGroup").onclick = guard(async () => {
+  const link = $("groupLink").value.trim();
+  if (!link) return toast("لینک یا شناسه گروه را وارد کنید", "err");
+  const help = $("groupHelp");
+  try {
+    const r = await api("/api/group/add", { link });
+    help.classList.add("hidden");
+    toast(`گفتگو «${r.chat.title}» (${r.chat.type_label}) انتخاب شد`, "ok");
+    $("groupLink").value = "";
+  } catch (e) {
+    // خطای نرم با راهنمای گام‌به‌گام (عضویت با لینک برای ربات ممکن نیست)
+    const data = e.data || {};
+    if (data.need_manual && data.steps) {
+      help.innerHTML = `<b>${esc(data.error)}</b><ol>${data.steps.map((s) => `<li>${esc(s)}</li>`).join("")}</ol>`;
+      help.classList.remove("hidden");
+      toast("ربات نمی‌تواند با لینک وارد گروه شود — راهنما نمایش داده شد", "err");
+    } else {
+      toast(e.message || "افزودن گروه ناموفق بود", "err");
+    }
+  }
+  refresh();
 });
 
 $("btnRules").onclick = guard(async () => {

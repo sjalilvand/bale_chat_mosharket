@@ -322,6 +322,22 @@ textarea { resize: vertical; line-height: 1.9; direction: rtl; }
   padding: 9px 12px;
 }
 
+/* ---------- راهنمای عضویت ---------- */
+
+.help-box {
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 12px;
+  padding: 12px 16px;
+  font-size: 12.5px;
+  line-height: 2;
+  margin: 8px 0;
+  color: #92400e;
+}
+
+.help-box ol { margin: 6px 0 0; padding-right: 20px; }
+.help-box li { margin: 4px 0; }
+
 /* ---------- نوار خواندن ---------- */
 
 .reading { margin-top: 10px; }
@@ -375,7 +391,7 @@ textarea { resize: vertical; line-height: 1.9; direction: rtl; }
 
 /* ---------- آمار ---------- */
 
-.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 
 .tile {
   background: linear-gradient(160deg, #f7fbf9, #eef6f2);
@@ -419,6 +435,7 @@ textarea { resize: vertical; line-height: 1.9; direction: rtl; }
 .rmsg .top b { font-size: 12.5px; }
 .rmsg .top .w { color: var(--muted); font-size: 10.5px; margin-inline-start: auto; }
 .rmsg .badge { font-size: 10px; background: #e8f7f1; color: var(--primary-2); border-radius: 999px; padding: 1px 8px; }
+.rmsg .badge.m { background: #dbeafe; color: #1d4ed8; }
 .rmsg .tx { color: #334155; line-height: 1.8; }
 
 /* ---------- درباره/فوتر ---------- */

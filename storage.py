@@ -20,21 +20,33 @@ def make_message(
     hour_text="",
     update_id=None,
     category="",
+    caption="",
+    media=None,
+    media_group_id=None,
+    reply_to=None,
+    forward=None,
+    chat_type="",
 ):
-    """ساخت دیکشنری استاندارد یک پیام"""
+    """ساخت دیکشنری استاندارد یک پیام (شامل رسانه، پاسخ و بازنشر)"""
     return {
         "message_id": message_id,
         "update_id": update_id,
         "chat_id": chat_id,
         "chat_title": chat_title or "",
+        "chat_type": str(chat_type or ""),
         "sender_id": sender_id,
         "sender_name": sender_name or "",
         "username": username or "",
         "text": text or "",
+        "caption": caption or "",
         "date": date if isinstance(date, int) else None,
         "date_text": str(date_text or ""),
         "hour_text": str(hour_text or ""),
         "category": category or "",
+        "media": media if isinstance(media, list) else [],
+        "media_group_id": media_group_id or None,
+        "reply_to": reply_to if isinstance(reply_to, dict) else None,
+        "forward": forward if isinstance(forward, dict) else None,
     }
 
 
@@ -141,6 +153,7 @@ def import_json(path):
         d = _field(item, ["date", "زمان", "تاریخ"])
         h = _field(item, ["hour_text", "ساعت", "time"])
         ts = _to_int(d)
+        media = item.get("media")
         out.append(
             make_message(
                 message_id=_to_int(_field(item, ["message_id"])),
@@ -148,9 +161,15 @@ def import_json(path):
                 username=_field(item, ["username"]),
                 chat_title=chat,
                 text=text,
+                caption=_field(item, ["caption", "کپشن"]),
                 date=ts,
                 date_text=d if ts is None else "",
                 hour_text=h,
+                media=media if isinstance(media, list) else None,
+                media_group_id=_field(item, ["media_group_id"]) or None,
+                reply_to=item.get("reply_to") if isinstance(item.get("reply_to"), dict) else None,
+                forward=item.get("forward") if isinstance(item.get("forward"), dict) else None,
+                chat_type=_field(item, ["chat_type"]),
             )
         )
     return out

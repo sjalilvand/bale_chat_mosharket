@@ -63,14 +63,22 @@
   <!-- گروه -->
   <section class="card span-6">
     <div class="card-head"><h2>۲) انتخاب گروه</h2></div>
+    <label class="lbl" for="groupLink">لینک دعوت گروه یا شناسه گروه (ble.ir/join/... یا شناسه عددی یا @نام‌کاربری)</label>
+    <div class="row">
+      <input type="text" id="groupLink" placeholder="مثال: ble.ir/join/Aa1UUycLMF" autocomplete="off" dir="ltr">
+      <button class="btn" id="btnAddGroup">افزودن گروه</button>
+    </div>
+    <div class="help-box hidden" id="groupHelp"></div>
     <div class="row">
       <button class="btn ghost" id="btnGroups">شناسایی گروه‌ها</button>
-      <span class="mini-hint">اگر گروه نبود، در گروه یک پیام بفرستید و دوباره تلاش کنید</span>
+      <button class="btn ghost" id="btnAllGroups">همه گفتگوها</button>
+      <span class="mini-hint">اگر گروه در فهرست نیست، در گروه یک پیام بفرستید و دوباره تلاش کنید</span>
     </div>
     <div class="group-list" id="groupList">
       <div class="empty-row">هنوز گروهی شناسایی نشده است</div>
     </div>
     <div class="selected-chat" id="selectedChat">هیچ گروهی انتخاب نشده — همه گروه‌ها ذخیره می‌شوند</div>
+    <p class="hint">نکته: ربات‌های بله مثل تلگرام اجازه ندارند با لینک دعوت وارد گروه شوند؛ لینک فقط برای افراد است. با دکمه «افزودن گروه» راهنمای گام‌به‌گام اضافه‌کردن ربات به گروه را می‌بینید. پیام‌هایی هم که به چت ربات فوروارد می‌کنید ذخیره می‌شوند.</p>
   </section>
 
   <!-- دسته‌بندی -->
@@ -102,6 +110,7 @@
       <div class="bar"><i id="readingBar"></i></div>
       <span class="mini-hint" id="readingNote">۰ پیام از هدف ۵۰</span>
     </div>
+    <p class="hint">برای پیام‌های قدیمی‌تر از ورود ربات: آن‌ها را از گروه به چت خصوصی ربات <b>فوروارد</b> کنید — این نسخه عکس، کپشن و ویدیو را هم ذخیره می‌کند.</p>
     <div class="log" id="log"></div>
   </section>
 
@@ -110,8 +119,10 @@
     <div class="card-head"><h2>۵) آمار پیام‌های خوانده‌شده</h2></div>
     <div class="tiles">
       <div class="tile"><b id="stTotal">0</b><span>کل پیام‌ها</span></div>
-      <div class="tile"><b id="stSession">0</b><span>این نشست</span></div>
       <div class="tile"><b id="stPeople">0</b><span>شرکت‌کنندگان</span></div>
+      <div class="tile"><b id="stPhotos">0</b><span>عکس‌ها</span></div>
+      <div class="tile"><b id="stMedia">0</b><span>کل رسانه‌ها</span></div>
+      <div class="tile"><b id="stSession">0</b><span>این نشست</span></div>
       <div class="tile"><b id="stCats">0</b><span>دسته‌ها</span></div>
     </div>
     <div class="cats" id="cats"></div>
@@ -138,7 +149,7 @@
   <!-- درباره -->
   <section class="card span-4 about">
     <div class="card-head"><h2>درباره</h2></div>
-    <p class="hint">ربات‌ها فقط پیام‌های جدید را می‌بینند؛ برای تاریخچه کامل از ابزار <b>bale_chat_backup</b> خروجی بگیرید و با «ورود پیام‌های قدیمی» اضافه کنید.</p>
+    <p class="hint">این نسخه عکس‌ها، آلبوم‌ها، کپشن، کامنت‌ها (پاسخ‌ها)، ویدیو و بازنشرها را می‌خواند و در گزارش نشان می‌دهد. ربات‌ها فقط پیام‌های بعد از اضافه‌شدن را می‌بینند؛ برای تاریخچه کامل، پیام‌ها را به ربات فوروارد کنید یا از ابزار <b>bale_chat_backup</b> خروجی بگیرید و با «ورود پیام‌های قدیمی» اضافه کنید.</p>
     <p class="hint" id="msgPath"></p>
   </section>
 

@@ -1,8 +1,15 @@
 # -*- coding: utf-8 -*-
-"""Bale Chat Mosharket — نسخه وب (Flask)
+"""Bale Chat Mosharket — نسخه وب ۳ (Flask)
 
 داشبورد گرافیکی مدرن در مرورگر برای دریافت، دسته‌بندی و ساخت گزارش HTML
 از پیام‌های گروه‌های پیام‌رسان بله، همراه با نمایش زنده روند پیشرفت.
+
+امکانات نسخه ۳:
+    - افزودن گروه با لینک دعوت ble.ir/join/... (با راهنمای گام‌به‌گام)
+    - خواندن همه انواع پیام: عکس، آلبوم، ویدیو، ویس، فایل، کپشن،
+      کامنت‌ها (پاسخ‌ها)، بازنشرها و پیام‌های کانال
+    - دانلود خودکار عکس‌ها و نمایش آن‌ها در داشبورد و گزارش HTML
+    - ذخیره پیام‌هایی که به ربات فوروارد می‌شوند (چت خصوصی)
 
 اجرا:
     python main.py        →  http://127.0.0.1:5000
@@ -20,6 +27,7 @@ from flask import Flask, jsonify, render_template, request, send_from_directory
 
 from bale_client import BaleBotError, BaleClient
 from categorizer import Categorizer, FALLBACK, parse_rules
+from collector import normalize_member_update, normalize_update
 from jalali import format_ts, now_str
 from report import build_report
 from storage import (
@@ -34,6 +42,7 @@ from storage import (
 BASE = os.path.dirname(os.path.abspath(__file__))
 MESSAGES_PATH = os.path.join(BASE, "messages.json")
 SETTINGS_PATH = os.path.join(BASE, "settings.json")
+MEDIA_DIR = os.path.join(BASE, "media")
 OUTPUT_DIR = os.path.join(BASE, "output")
 
 DEFAULT_RULES = """اطلاعیه: اطلاعیه، اعلام، هماهنگ، توجه داشته باشید، مهم
@@ -41,6 +50,13 @@ DEFAULT_RULES = """اطلاعیه: اطلاعیه، اعلام، هماهنگ، 
 پرسش و پاسخ: ؟, ?, چرا، چطور، چگونه، سوال، سؤال، مشکل، راهنمایی
 سفارش و امور مالی: سفارش، خرید، قیمت، فاکتور، پرداخت، تخفیف، واریز
 تشکر و تعامل: ممنون، تشکر، مرسی، عالی، دست شما درد نکند"""
+
+TYPE_LABELS = {
+    "private": "چت خصوصی",
+    "group": "گروه",
+    "supergroup": "گروه",
+    "channel": "کانال",
+}
 
 DEMO_MESSAGES = [
     ("علی رضایی", "اعلامیه: جلسه هماهنگی گروه فردا ساعت ۱۰ برگزار می‌شود"),
@@ -72,6 +88,7 @@ class AppState:
         self.seen_updates = {
             m.get("update_id") for m in self.messages if m.get("update_id") is not None
         }
+        self.known_chats = {}  # chat_id(str) → {id,title,type,count}
         self.running = False
         self.started_once = False
         self.stop_event = threading.Event()
@@ -85,7 +102,7 @@ class AppState:
         self._load_settings()
 
     def _load_settings(self):
-        """بازیابی تنظیمات قبلی (توکن، گروه، قوانین) پس از ری‌استارت"""
+        """بازیابی تنظیمات قبلی (توکن، گروه، قوانین، گفتگوهای شناخته‌شده)"""
         try:
             with open(SETTINGS_PATH, encoding="utf-8") as f:
                 data = json.load(f)
@@ -107,6 +124,11 @@ class AppState:
             self.target = max(1, int(data.get("target") or 50))
         except (TypeError, ValueError):
             pass
+        chats = data.get("known_chats")
+        if isinstance(chats, dict):
+            self.known_chats = {
+                str(k): (v if isinstance(v, dict) else {}) for k, v in chats.items()
+            }
 
     # ---------- لاگ ----------
 
@@ -114,6 +136,64 @@ class AppState:
         with self.lock:
             self.log.append({"t": now_str(), "text": text, "kind": kind})
             self.log = self.log[-300:]
+
+    # ---------- گفتگوهای شناخته‌شده ----------
+
+    def record_chat(self, chat_id, title="", ctype="", count=1):
+        """ثبت/به‌روزرسانی یک گفتگو برای صفحه «انتخاب گروه»"""
+        if chat_id is None:
+            return
+        with self.lock:
+            key = str(chat_id)
+            rec = self.known_chats.get(key) or {
+                "id": chat_id,
+                "title": "",
+                "type": ctype or "",
+                "count": 0,
+            }
+            if title:
+                rec["title"] = title
+            if ctype:
+                rec["type"] = ctype
+            rec["count"] = int(rec.get("count") or 0) + count
+            self.known_chats[key] = rec
+
+    def groups_snapshot(self):
+        """لیست گفتگوهای شناخته‌شده از آپدیت‌ها و پیام‌های ذخیره‌شده"""
+        chats = {}
+        with self.lock:
+            base = {k: dict(v) for k, v in self.known_chats.items()}
+        for key, rec in base.items():
+            chats[key] = {
+                "id": rec.get("id"),
+                "title": rec.get("title") or f"گفتگو {key}",
+                "type": rec.get("type") or "",
+                "count": rec.get("count") or 0,
+            }
+        with self.lock:
+            msgs = list(self.messages)
+        for m in msgs:
+            cid = m.get("chat_id")
+            if cid is None:
+                continue
+            key = str(cid)
+            rec = chats.get(key) or {"id": cid, "title": "", "type": m.get("chat_type") or "", "count": 0}
+            if not rec.get("title") and m.get("chat_title"):
+                rec["title"] = m["chat_title"]
+            rec["count"] = int(rec.get("count") or 0)
+            chats[key] = rec
+        out = []
+        for key, rec in chats.items():
+            t = rec.get("type") or ""
+            out.append({
+                "id": rec["id"],
+                "title": rec.get("title") or f"گفتگو {key}",
+                "type": t,
+                "type_label": TYPE_LABELS.get(t, "گفتگو"),
+                "count": rec.get("count") or 0,
+            })
+        out.sort(key=lambda c: -c["count"])
+        return out
 
     # ---------- پیشرفت ----------
 
@@ -174,32 +254,46 @@ class AppState:
 
     def stats(self):
         with self.lock:
-            cats = Counter(m.get("category") or FALLBACK for m in self.messages)
-            people = set()
-            for m in self.messages:
-                p = m.get("sender_name") or m.get("username") or m.get("sender_id")
-                if p:
-                    people.add(str(p))
-            return {
-                "total": len(self.messages),
-                "session": self.session_count,
-                "participants": len(people),
-                "categories": dict(cats.most_common()),
-            }
+            msgs = list(self.messages)
+        cats = Counter(m.get("category") or FALLBACK for m in msgs)
+        people = set()
+        photos = 0
+        media_count = 0
+        for m in msgs:
+            p = m.get("sender_name") or m.get("username") or m.get("sender_id")
+            if p:
+                people.add(str(p))
+            for item in m.get("media") or []:
+                media_count += 1
+                if item.get("type") == "photo":
+                    photos += 1
+        return {
+            "total": len(msgs),
+            "session": self.session_count,
+            "participants": len(people),
+            "photos": photos,
+            "media": media_count,
+            "categories": dict(cats.most_common()),
+        }
 
     def recent(self, n=8):
         with self.lock:
-            msgs = list(self.messages)[-n:]
+            msgs = list(self.messages)
         msgs.sort(key=lambda m: m.get("date") or 0, reverse=True)
         out = []
-        for m in msgs:
+        for m in msgs[:n]:
+            has_photo = any(x.get("type") == "photo" for x in m.get("media") or [])
+            text = m.get("text") or m.get("caption") or ""
+            if not text and m.get("media"):
+                text = "[عکس]" if has_photo else "[رسانه]"
             out.append(
                 {
                     "sender": m.get("sender_name") or m.get("username") or "ناشناس",
                     "category": m.get("category") or FALLBACK,
-                    "text": (m.get("text") or "—")[:140],
+                    "text": text[:140],
                     "when": format_ts(m.get("date")) or m.get("date_text", ""),
                     "chat": m.get("chat_title") or "",
+                    "media": len(m.get("media") or []),
                 }
             )
         return out
@@ -221,6 +315,13 @@ def index():
 def output_file(name):
     resp = send_from_directory(OUTPUT_DIR, name)
     resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+@app.route("/media/<path:name>")
+def media_file(name):
+    resp = send_from_directory(MEDIA_DIR, name)
+    resp.headers["Cache-Control"] = "max-age=3600"
     return resp
 
 
@@ -290,35 +391,141 @@ def api_groups():
     token = _current_token()
     if not token:
         return jsonify(ok=False, error="ابتدا ربات را متصل کنید"), 400
+
+    # اسکن زنده غیرمخرب (offset=0 تأیید نمی‌کند)؛ اگر دریافت فعال باشد 409 می‌گیریم و بی‌خیال
     try:
         updates = BaleClient(token).get_updates(offset=0, limit=100, timeout=0) or []
+        for upd in updates:
+            member = normalize_member_update(upd)
+            if member:
+                S.record_chat(member["chat_id"], member["title"], member["type"])
+            src = (
+                upd.get("message")
+                or upd.get("edited_message")
+                or upd.get("channel_post")
+                or upd.get("edited_channel_post")
+            )
+            if isinstance(src, dict):
+                chat = src.get("chat") or {}
+                S.record_chat(chat.get("id"), chat.get("title") or chat.get("first_name"),
+                              chat.get("type"))
+    except BaleBotError:
+        pass  # هنگام polling فعال؛ لیست از پیام‌های ذخیره‌شده ساخته می‌شود
+
+    groups = S.groups_snapshot()
+    S.add_log(f"{len(groups)} گفتگو شناسایی شد", "info")
+    return jsonify(ok=True, groups=groups)
+
+
+@app.route("/api/group/add", methods=["POST"])
+def api_group_add():
+    """افزودن گروه: شناسه عددی، @نام‌کاربری یا لینک دعوت
+
+    نکته: API ربات بله اجازه عضویت با لینک دعوت ندارد (تست زنده شد)،
+    بنابراین برای لینک، راهنمای گام‌به‌گام نمایش داده می‌شود.
+    """
+    data = request.get_json(silent=True) or {}
+    raw = str(data.get("link") or "").strip()
+    if not raw:
+        return jsonify(ok=False, error="لینک یا شناسه گروه را وارد کنید"), 400
+    token = _current_token()
+    if not token:
+        return jsonify(ok=False, error="ابتدا ربات را متصل کنید"), 400
+    client = BaleClient(token)
+
+    # ۱) شناسه عددی (مثلاً -1001234567890)
+    cleaned = raw.replace(" ", "")
+    try:
+        chat_id = int(cleaned)
+        info = client.get_chat(chat_id)
+        title = info.get("title") or info.get("first_name") or f"گفتگو {chat_id}"
+        ctype = info.get("type") or ""
+        S.record_chat(chat_id, title, ctype)
+        with S.lock:
+            S.chat_id = chat_id
+            S.chat_title = title
+        S.add_log(f"گروه «{title}» با شناسه انتخاب شد", "info")
+        _save_settings()
+        return jsonify(ok=True, chat={"id": chat_id, "title": title,
+                                      "type_label": TYPE_LABELS.get(ctype, "گفتگو")})
+    except ValueError:
+        pass
     except BaleBotError as exc:
-        S.error = str(exc)
-        S.add_log(f"خطا در شناسایی گروه‌ها: {exc}", "error")
-        return jsonify(ok=False, error=str(exc)), 400
-    chats = {}
-    for upd in updates:
-        src = upd.get("message") or upd.get("edited_message")
-        if not src:
-            continue
-        chat = src.get("chat") or {}
-        key = chat.get("id")
-        if key is None:
-            continue
-        chats[key] = {
-            "id": key,
-            "title": str(chat.get("title") or chat.get("first_name") or key),
-            "type": str(chat.get("type") or ""),
-            "count": chats.get(key, {}).get("count", 0) + 1,
-        }
-    result = sorted(chats.values(), key=lambda c: -c["count"])
-    S.add_log(f"{len(result)} گفتگو شناسایی شد", "info")
-    return jsonify(ok=True, groups=result)
+        return jsonify(
+            ok=False,
+            error=f"شناسه یافت نشد: {exc} — ربات باید ابتدا در گروه اضافه شده باشد",
+        ), 400
+
+    # ۲) لینک دعوت (ble.ir/join/HASH) — ربات نمی‌تواند خودش عضو شود
+    lower = cleaned.lower()
+    is_invite = ("ble.ir/join/" in lower) or ("/join/" in lower) or (
+        "invite" in lower and "http" in lower
+    )
+    if is_invite:
+        S.add_log("لینک دعوت دریافت شد — عضویت خودکار ربات ممکن نیست", "warn")
+        return jsonify(
+            ok=False,
+            need_manual=True,
+            link=raw,
+            error="ربات‌های بله (مثل همه ربات‌ها) نمی‌توانند با لینک دعوت وارد گروه شوند؛ لینک دعوت فقط برای افراد است. لطفاً ربات را دستی به گروه اضافه کنید:",
+            steps=[
+                "گروه را باز کنید و روی نام گروه (بالای صفحه) بزنید تا تنظیمات گروه باز شود",
+                "گزینه «افزودن عضو» را بزنید و @mosharkat_bot را جست‌وجو و انتخاب کنید",
+                "بهتر است ربات را «مدیر» (ادمین) کنید تا همه پیام‌ها را ببیند",
+                "بعد از اضافه شدن، در همین صفحه دکمه «شناسایی گروه‌ها» را بزنید — گروه به‌طور خودکار ظاهر می‌شود",
+            ],
+        ), 200
+
+    # ۳) نام کاربری (@name یا ble.ir/name یا t.me/name)
+    username = ""
+    if cleaned.startswith("@"):
+        username = cleaned
+    else:
+        for prefix in ("https://ble.ir/", "http://ble.ir/", "ble.ir/", "https://t.me/", "t.me/"):
+            if lower.startswith(prefix):
+                username = "@" + raw[len(prefix):].strip("/? ")
+                break
+    if username:
+        try:
+            info = client.get_chat(username)
+            chat_id = info.get("id")
+            title = info.get("title") or info.get("first_name") or username
+            ctype = info.get("type") or ""
+            S.record_chat(chat_id, title, ctype)
+            with S.lock:
+                S.chat_id = chat_id
+                S.chat_title = title
+            S.add_log(f"گفتگو «{title}» با نام کاربری انتخاب شد", "info")
+            _save_settings()
+            return jsonify(ok=True, chat={"id": chat_id, "title": title,
+                                          "type_label": TYPE_LABELS.get(ctype, "گفتگو")})
+        except BaleBotError as exc:
+            return jsonify(
+                ok=False,
+                need_manual=True,
+                error=f"این گفتگو برای ربات قابل شناسایی نیست ({exc}).",
+                steps=[
+                    "اگر گروه خصوصی است، ربات باید اول با «افزودن عضو» به گروه اضافه شود",
+                    "بعد از اضافه شدن ربات، دکمه «شناسایی گروه‌ها» را بزنید",
+                ],
+            ), 200
+
+    return jsonify(
+        ok=False,
+        error="قالب ورودی شناخته نشد؛ شناسه عددی گروه، @نام‌کاربری یا لینک بله را وارد کنید",
+    ), 400
 
 
 @app.route("/api/group/select", methods=["POST"])
 def api_group_select():
     data = request.get_json(silent=True) or {}
+    if str(data.get("id")) == "all":
+        with S.lock:
+            S.chat_id = None
+            S.chat_title = ""
+        S.add_log("حالت «همه گفتگوها» فعال شد", "info")
+        _save_settings()
+        return jsonify(ok=True)
     try:
         chat_id = int(data.get("id"))
     except (TypeError, ValueError):
@@ -368,7 +575,42 @@ def api_target():
         S.target = max(1, int(data.get("target") or 50))
     except (TypeError, ValueError):
         return jsonify(ok=False, error="عدد نامعتبر"), 400
+    _save_settings()
     return jsonify(ok=True, target=S.target)
+
+
+def _default_ext(media_type):
+    return {
+        "photo": ".jpg",
+        "video": ".mp4",
+        "voice": ".ogg",
+        "audio": ".mp3",
+        "animation": ".mp4",
+        "document": ".bin",
+        "sticker": ".webp",
+    }.get(media_type, ".bin")
+
+
+def _download_media(client, msg):
+    """دانلود همه رسانه‌های پیام در پوشه media — نام فایل در item['file'] ذخیره می‌شود"""
+    saved = 0
+    for i, item in enumerate(msg.get("media") or []):
+        fid = item.get("file_id")
+        if not fid:
+            continue
+        try:
+            info = client.get_file(fid)
+            fpath = str(info.get("file_path") or "")
+            ext = os.path.splitext(fpath)[1].lower()
+            if not ext:
+                ext = _default_ext(item.get("type"))
+            name = f"u{msg.get('update_id') or 0}_m{msg.get('message_id') or 0}_{i}{ext}"
+            client.download_file(fpath, os.path.join(MEDIA_DIR, name))
+            item["file"] = name
+            saved += 1
+        except BaleBotError as exc:
+            S.add_log(f"دانلود {item.get('type')} ناموفق: {exc}", "error")
+    return saved
 
 
 def _collector_worker(token):
@@ -398,45 +640,76 @@ def _collector_worker(token):
                 if uid is not None:
                     if uid < offset:
                         continue
-                    if uid in S.seen_updates:
-                        offset = uid + 1
-                        continue
                     offset = uid + 1
-                src = upd.get("message") or upd.get("edited_message")
-                if not src:
+
+                # اضافه/حذف شدن ربات از گروهی → گفتگو را ثبت کن
+                member = normalize_member_update(upd)
+                if member:
+                    S.record_chat(member["chat_id"], member["title"], member["type"])
+                    status = member.get("new_status") or ""
+                    if status in ("member", "administrator"):
+                        S.add_log(
+                            f"ربات به «{member['title']}» اضافه شد — گفتگو در فهرست انتخاب گروه قرار گرفت",
+                            "info",
+                        )
                     continue
-                chat = src.get("chat") or {}
-                chat_id = chat.get("id")
-                if S.chat_id is not None:
-                    if chat_id != S.chat_id:
-                        continue
-                elif chat.get("type") == "private":
+
+                msg = normalize_update(upd)
+                if msg is None:
                     continue
-                text = str(src.get("text") or src.get("caption") or "").strip()
-                sender = src.get("from") or {}
-                msg = make_message(
-                    message_id=src.get("message_id"),
-                    update_id=uid,
-                    sender_name=sender.get("first_name", ""),
-                    username=sender.get("username", ""),
-                    sender_id=sender.get("id"),
-                    chat_id=chat_id,
-                    chat_title=chat.get("title") or chat.get("first_name") or "",
-                    text=text,
-                    date=src.get("date"),
+
+                chat_id = msg.get("chat_id")
+                ctype = msg.get("chat_type") or ""
+                S.record_chat(chat_id, msg.get("chat_title"), ctype)
+
+                # فیلتر گفتگو: پیام‌های چت خصوصی (فوروارد کاربر) همیشه ذخیره می‌شوند
+                if S.chat_id is not None and ctype != "private" and chat_id != S.chat_id:
+                    continue
+
+                cat_text = (msg.get("text") or msg.get("caption") or "").strip()
+                if cat_text.startswith("/"):
+                    continue  # دستورات ربات ذخیره نمی‌شوند
+
+                # دانلود رسانه‌ها (عکس/ویدیو/فایل)
+                if msg.get("media"):
+                    n = _download_media(client, msg)
+                    if n:
+                        S.add_log(f"{n} فایل رسانه ذخیره شد", "info")
+
+                msg["category"] = (
+                    S.categorizer.categorize(cat_text) if cat_text else FALLBACK
                 )
-                msg["category"] = S.categorizer.categorize(text) if text else FALLBACK
+
                 with S.lock:
-                    S.messages.append(msg)
+                    # اگر پیام ویرایش‌شده باشد، نسخه قبلی جایگزین می‌شود
+                    replaced = False
+                    if msg.get("chat_id") is not None and msg.get("message_id"):
+                        for idx, old in enumerate(S.messages):
+                            if (
+                                old.get("chat_id") == msg.get("chat_id")
+                                and old.get("message_id") == msg.get("message_id")
+                            ):
+                                S.messages[idx] = msg
+                                replaced = True
+                                break
+                    if not replaced:
+                        S.messages.append(msg)
+                        S.session_count += 1
                     if uid is not None:
                         S.seen_updates.add(uid)
-                    S.session_count += 1
                     try:
                         save_messages(S.messages, MESSAGES_PATH)
                     except OSError as exc:
                         S.add_log(f"ذخیره فایل پیام‌ها ناموفق بود: {exc}", "error")
+
+                kind = "ویرایش" if msg.get("edited") else "پیام"
+                shown = cat_text[:44] + ("…" if len(cat_text) > 44 else "") or (
+                    f"[{len(msg.get('media') or [])} رسانه]"
+                    if msg.get("media")
+                    else "(بدون متن)"
+                )
                 S.add_log(
-                    f"پیام #{len(S.messages)} — {msg['sender_name']}: {(text[:44] + '…') if len(text) > 44 else text or '(بدون متن)'} ← دسته: {msg['category']}",
+                    f"{kind} #{len(S.messages)} — {msg['sender_name']}: {shown} ← دسته: {msg['category']}",
                     "msg",
                 )
         with S.lock:
@@ -463,7 +736,7 @@ def api_rules():
         S.categorizer = Categorizer(rules)
         S.rules_saved = True
         for m in S.messages:
-            t = m.get("text") or ""
+            t = (m.get("text") or m.get("caption") or "").strip()
             m["category"] = S.categorizer.categorize(t) if t else FALLBACK
         save_messages(S.messages, MESSAGES_PATH)
     S.add_log(f"{len(rules)} دسته فعال و بر {len(S.messages)} پیام اعمال شد", "info")
@@ -505,6 +778,7 @@ def api_demo():
     with S.lock:
         title = S.chat_title or "گروه مشارکت های مردمی (نمونه)"
         base = len(S.messages)
+        demo_id = 990000 + base
         for i in range(n):
             name, text = DEMO_MESSAGES[(base + i) % len(DEMO_MESSAGES)]
             msg = make_message(
@@ -541,7 +815,12 @@ def api_report():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     name = "report.html"
     try:
-        path = build_report(msgs, os.path.join(OUTPUT_DIR, name), group_title=title)
+        path = build_report(
+            msgs,
+            os.path.join(OUTPUT_DIR, name),
+            group_title=title,
+            media_base=MEDIA_DIR,
+        )
     except OSError as exc:
         return jsonify(ok=False, error=str(exc)), 500
     with S.lock:
@@ -587,6 +866,7 @@ def _save_settings():
             "chat_title": S.chat_title,
             "rules": S.rules_text,
             "target": S.target,
+            "known_chats": S.known_chats,
         }
     try:
         with open(SETTINGS_PATH, "w", encoding="utf-8") as f:

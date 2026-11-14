@@ -5,9 +5,14 @@ API بله تقریباً مشابه API ربات تلگرام است:
     https://tapi.bale.ai/bot<TOKEN>/<METHOD>
 """
 
+import os
+
 import requests
 
 API_BASE = "https://tapi.bale.ai/bot"
+
+
+FILE_BASE = "https://tapi.bale.ai/file"
 
 
 class BaleBotError(Exception):
@@ -23,6 +28,7 @@ class BaleClient:
             raise BaleBotError("توکن ربات خالی است")
         if ":" not in token:
             raise BaleBotError("قالب توکن معتبر نیست (مثال: 123456:ABC-DEF)")
+        self._token = token
         self._base = f"{API_BASE}{token}"
         self.timeout = timeout
 
@@ -68,3 +74,29 @@ class BaleClient:
     def get_chat(self, chat_id):
         """اطلاعات یک گفتگو (گروه/کانال/چت خصوصی)"""
         return self._call("getChat", {"chat_id": chat_id})
+
+    # ----- فایل‌ها (عکس، ویدیو، صوت، سند) -----
+
+    def get_file(self, file_id):
+        """دریافت اطلاعات فایل برای دانلود — file_path در پاسخ برگردانده می‌شود"""
+        return self._call("getFile", {"file_id": file_id})
+
+    def download_file(self, file_path, dest):
+        """دانلود فایل از سرور بله و ذخیره در مسیر dest
+
+        لینک دانلود طبق مستندات رسمی:
+            https://tapi.bale.ai/file/bot<token>/<file_path>
+        (اعتبار لینک یک ساعت است؛ دانلود بلافاصله انجام می‌شود)
+        """
+        url = f"{FILE_BASE}/bot{self._token}/{str(file_path).lstrip('/')}"
+        try:
+            resp = requests.get(url, timeout=self.timeout)
+        except requests.RequestException as exc:
+            raise BaleBotError(f"خطای شبکه در دانلود فایل: {exc}") from exc
+        if resp.status_code != 200 or not resp.content:
+            raise BaleBotError(f"دانلود فایل ناموفق بود (کد HTTP {resp.status_code})")
+        directory = os.path.dirname(os.path.abspath(dest))
+        os.makedirs(directory, exist_ok=True)
+        with open(dest, "wb") as f:
+            f.write(resp.content)
+        return os.path.abspath(dest)
