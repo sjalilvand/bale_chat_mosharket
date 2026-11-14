@@ -138,6 +138,17 @@ async function refresh() {
   try {
     const s = await fetch("/api/state").then((r) => r.json());
     renderBot(s);
+    // بنر هشدار «صف سرور بله خالی است» (نسخه ۴.۵)
+    if ($("queueBanner")) {
+      $("queueBanner").classList.toggle("hidden", !s.queue_hint);
+    }
+    // محل ذخیره داده‌ها در بخش «درباره» (نسخه ۴.۵)
+    if (s.data_info && $("msgPath")) {
+      $("msgPath").innerHTML =
+        "محل ذخیره داده‌ها: " + esc(s.data_info.messages) +
+        "<br>آرشیو خام: " + esc(s.data_info.raw) +
+        "<br>پوشه گزارش: " + esc(s.data_info.output);
+    }
     if (s.version) {
       $("verChip").textContent = "نسخه " + fa(s.version);
       $("verFooter").textContent = "نسخه وب " + fa(s.version);
@@ -300,6 +311,8 @@ $("btnRecover").onclick = guard(async () => {
   );
   refresh();
 });
+
+$("btnBackup").onclick = () => window.open("/api/backup", "_blank");
 
 $("importFile").onchange = guard(async () => {
   const f = $("importFile").files[0];

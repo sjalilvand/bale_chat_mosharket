@@ -162,8 +162,10 @@ def import_json(path):
         out.append(
             make_message(
                 message_id=_to_int(_field(item, ["message_id"])),
+                update_id=_to_int(_field(item, ["update_id"])),
                 sender_name=sender,
                 username=_field(item, ["username"]),
+                chat_id=_to_int(_field(item, ["chat_id"])),
                 chat_title=chat,
                 text=text,
                 caption=_field(item, ["caption", "کپشن"]),
@@ -195,14 +197,26 @@ def dedupe_key(msg):
 
 
 def merge_messages(base, incoming):
-    """افزودن پیام‌های جدید به لیست موجود بدون تکرار؛ تعداد افزوده‌شده را برمی‌گرداند"""
+    """افزودن پیام‌های جدید به لیست موجود بدون تکرار؛ تعداد افزوده‌شده را برمی‌گرداند
+
+    پیام‌هایی که update_id دارند با همان شناسه هم چک می‌شوند تا فایل پشتیبان
+    یا messages.json هرچقدر هم دوباره وارد شود، هیچ تکراری ساخته نشود.
+    """
     seen = {dedupe_key(m) for m in base}
+    seen_uids = {
+        m.get("update_id") for m in base if m.get("update_id") is not None
+    }
     added = 0
     for m in incoming:
+        uid = m.get("update_id")
+        if uid is not None and uid in seen_uids:
+            continue
         k = dedupe_key(m)
         if k in seen:
             continue
         seen.add(k)
+        if uid is not None:
+            seen_uids.add(uid)
         base.append(m)
         added += 1
     return added

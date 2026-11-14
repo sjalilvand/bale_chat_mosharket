@@ -4,6 +4,14 @@
 داشبورد گرافیکی مدرن در مرورگر برای دریافت، دسته‌بندی و ساخت گزارش HTML
 از پیام‌های گروه‌های پیام‌رسان بله، همراه با نمایش زنده روند پیشرفت.
 
+امکانات نسخه ۴.۵:
+    - به‌روزرسانی خودکار گزارش HTML با رسیدن «هر» پیام جدید (حتی در دریافت زنده) —
+      دیگر هیچ‌وقت گزارش کهنه/خالی نشان داده نمی‌شود
+    - بنر هشدار شفاف در داشبورد وقتی صف سرور بله خالی است (با دو راه بازیابی)
+    - دکمه «دانلود فایل پشتیبان داده‌ها» برای انتقال امن بین پوشه‌ها و نسخه‌ها
+    - ورود هوشمند: فایل پشتیبان برنامه، آرشیو خام نسخه قبلی و messages.json
+      همه با یک دکمه پذیرفته می‌شوند (با دانلود عکس‌ها و به‌روزرسانی گزارش)
+
 امکانات نسخه ۴.۴:
     - همگام‌سازی خودکار به‌محض اجرا/اتصال: اول «همه» پیام‌های قبلی موجود در بات
       خوانده می‌شود (متن، عکس، کپشن، کامنت، بازنشر — بدون فیلتر گروه)، در پایان
@@ -122,6 +130,8 @@ class AppState:
         self.log = []
         self.report_ready = False
         self.report_url = ""
+        self.queue_hint = False  # بنر هشدار «صف سرور بله خالی است»
+        self.last_report_ts = 0.0  # آخرین زمان ساخت/به‌روزرسانی خودکار گزارش
         self.error = ""
         self.offset = 0  # آخرین update_id تأییدشده + ۱ (ماندگار در settings)
         self.raw = []  # بایگانی خام آپدیت‌ها — ضد گم‌شدن پیام
@@ -431,6 +441,13 @@ def api_state():
             "draining": S.draining,
             "phase": S.phase,
             "raw_count": len(S.raw),
+            "queue_hint": S.queue_hint,
+            "data_info": {
+                "messages": MESSAGES_PATH,
+                "raw": RAW_PATH,
+                "output": OUTPUT_DIR,
+                "media": MEDIA_DIR,
+            },
             "version": VERSION,
             "app_name": APP_NAME,
         }
@@ -471,25 +488,27 @@ def api_groups():
     if not token:
         return jsonify(ok=False, error="ابتدا ربات را متصل کنید"), 400
 
-    # اسکن زنده غیرمخرب (offset=0 تأیید نمی‌کند)؛ اگر دریافت فعال باشد 409 می‌گیریم و بی‌خیال
-    try:
-        updates = BaleClient(token).get_updates(offset=0, limit=100, timeout=0) or []
-        for upd in updates:
-            member = normalize_member_update(upd)
-            if member:
-                S.record_chat(member["chat_id"], member["title"], member["type"])
-            src = (
-                upd.get("message")
-                or upd.get("edited_message")
-                or upd.get("channel_post")
-                or upd.get("edited_channel_post")
-            )
-            if isinstance(src, dict):
-                chat = src.get("chat") or {}
-                S.record_chat(chat.get("id"), chat.get("title") or chat.get("first_name"),
-                              chat.get("type"))
-    except BaleBotError:
-        pass  # هنگام polling فعال؛ لیست از پیام‌های ذخیره‌شده ساخته می‌شود
+    # اسکن زنده غیرمخرب (offset=0 تأیید نمی‌کند) — فقط وقتی رشته دریافت فعال نیست؛
+    # در حین polling فعال، همین اسکن باعث تداخل (409) و کندی دریافت می‌شد
+    if not S.running:
+        try:
+            updates = BaleClient(token).get_updates(offset=0, limit=100, timeout=0) or []
+            for upd in updates:
+                member = normalize_member_update(upd)
+                if member:
+                    S.record_chat(member["chat_id"], member["title"], member["type"])
+                src = (
+                    upd.get("message")
+                    or upd.get("edited_message")
+                    or upd.get("channel_post")
+                    or upd.get("edited_channel_post")
+                )
+                if isinstance(src, dict):
+                    chat = src.get("chat") or {}
+                    S.record_chat(chat.get("id"), chat.get("title") or chat.get("first_name"),
+                                  chat.get("type"))
+        except BaleBotError:
+            pass  # لیست از پیام‌های ذخیره‌شده ساخته می‌شود
 
     groups = S.groups_snapshot()
     if len(groups) != S.last_groups_count:
@@ -808,6 +827,32 @@ def _finish_drain(client):
         )
 
 
+def _upsert_message(msg):
+    """افزودن پیام به پایگاه داده یا جایگزینی نسخه قبلی (پیام ویرایش‌شده)
+
+    تابع مشترک مسیر عادی (_store_update) و مسیر بازیابی از آرشیو خام
+    (_recover_from_raw) — تا در هر دو مسیر، پیام ویرایش‌شده نسخه قبلی
+    را جایگزین کند و هیچ پیام تکراری‌ای ساخته نشود (اصلاح نسخه ۴.۵).
+
+    خروجی: True اگر پیام جدید اضافه شد، False اگر نسخه قبلی جایگزین شد.
+    """
+    with S.lock:
+        replaced = False
+        if msg.get("chat_id") is not None and msg.get("message_id"):
+            for idx, old in enumerate(S.messages):
+                if (
+                    old.get("chat_id") == msg.get("chat_id")
+                    and old.get("message_id") == msg.get("message_id")
+                ):
+                    S.messages[idx] = msg
+                    replaced = True
+                    break
+        if not replaced:
+            S.messages.append(msg)
+            S.session_count += 1
+        return not replaced
+
+
 def _recover_from_raw(client):
     """بازیابی پیام‌های ذخیره‌نشده از آرشیو خام (raw_updates.json)
 
@@ -836,27 +881,38 @@ def _recover_from_raw(client):
             except Exception:
                 pass
         msg["category"] = S.categorizer.categorize(cat_text) if cat_text else FALLBACK
+        if _upsert_message(msg):
+            recovered += 1
         with S.lock:
-            S.messages.append(msg)
             if uid is not None:
                 S.seen_updates.add(uid)
-        recovered += 1
     if recovered:
         with S.lock:
             try:
                 save_messages(S.messages, MESSAGES_PATH)
             except OSError:
                 pass
+        S.queue_hint = False
     return recovered
 
 
-def _build_report_auto():
-    """ساخت خودکار گزارش HTML از پیام‌های ذخیره‌شده؛ اگر پیامی نباشد کاری نمی‌کند"""
+def _maybe_auto_report(min_interval=25.0, force=False):
+    """ساخت/به‌روزرسانی گزارش HTML از وضعیت فعلی پایگاه داده (نسخه ۴.۵)
+
+    این تابع با «هر» تغییر پایگاه داده فراخوانی می‌شود تا گزارش همیشه
+    هم‌گام با پیام‌های ذخیره‌شده باشد و هیچ‌وقت گزارش کهنه/خالی دیده نشود.
+    برای جلوگیری از بازسازی مکرر با عکس‌های زیاد، حداقل فاصله ۲۵ ثانیه
+    اعمال می‌شود (force=True بدون توجه به فاصله زمانی بازسازی می‌کند).
+    """
     with S.lock:
+        now = time.time()
+        if not force and now - S.last_report_ts < min_interval:
+            return False
+        if not S.messages:
+            return False
+        S.last_report_ts = now
         msgs = list(S.messages)
         title = S.chat_title or None
-    if not msgs:
-        return ""
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     try:
         build_report(
@@ -866,12 +922,19 @@ def _build_report_auto():
             media_base=MEDIA_DIR,
         )
     except OSError as exc:
-        S.add_log(f"ساخت خودکار گزارش ناموفق بود: {exc}", "error")
-        return ""
+        S.add_log(f"به‌روزرسانی خودکار گزارش ناموفق بود: {exc}", "error")
+        return False
     with S.lock:
         S.report_ready = True
         S.report_url = "/output/report.html"
-    return S.report_url
+    return True
+
+
+def _build_report_auto():
+    """ساخت خودکار گزارش HTML از پیام‌های ذخیره‌شده؛ اگر پیامی نباشد کاری نمی‌کند"""
+    if _maybe_auto_report(force=True):
+        return S.report_url
+    return ""
 
 
 def _store_update(client, upd, force_all=False, live=False):
@@ -931,23 +994,11 @@ def _store_update(client, upd, force_all=False, live=False):
         S.categorizer.categorize(cat_text) if cat_text else FALLBACK
     )
 
+    _upsert_message(msg)
     with S.lock:
-        # اگر پیام ویرایش‌شده باشد، نسخه قبلی جایگزین می‌شود
-        replaced = False
-        if msg.get("chat_id") is not None and msg.get("message_id"):
-            for idx, old in enumerate(S.messages):
-                if (
-                    old.get("chat_id") == msg.get("chat_id")
-                    and old.get("message_id") == msg.get("message_id")
-                ):
-                    S.messages[idx] = msg
-                    replaced = True
-                    break
-        if not replaced:
-            S.messages.append(msg)
-            S.session_count += 1
         if uid is not None:
             S.seen_updates.add(uid)
+        S.queue_hint = False  # پیام رسید — بنر «صف خالی» برداشته می‌شود
         try:
             save_messages(S.messages, MESSAGES_PATH)
         except OSError as exc:
@@ -1081,14 +1132,13 @@ def _collector_worker(token, backlog=True):
 
             with S.lock:
                 found = len(S.messages) - before
+                total_msgs = len(S.messages)
             if found:
                 S.add_log(
                     f"مرحله ۱ کامل شد — {found} پیام قبلی خوانده و ذخیره شد؛ "
                     "گزارش HTML به‌طور خودکار ساخته می‌شود ...",
                     "ok",
                 )
-                if _build_report_auto():
-                    S.add_log("گزارش HTML آماده شد — دکمه «مشاهده گزارش» فعال است", "ok")
                 target_chat = S.last_private_chat
                 if target_chat is not None:
                     _send_private(
@@ -1096,9 +1146,16 @@ def _collector_worker(token, backlog=True):
                         f"همه پیام‌های قبلی خوانده شد ({found} پیام جدید) و گزارش HTML ساخته شد. "
                         "از این پس پیام‌های جدید به‌طور زنده ذخیره می‌شوند.",
                     )
-            elif not S.stop_event.is_set():
+            elif not S.stop_event.is_set() and not recovered:
                 for line in BACKLOG_EMPTY_HINT.splitlines():
                     S.add_log(line, "warn")
+            # از نسخه ۴.۵: گزارش همیشه از وضعیت فعلی پایگاه داده ساخته می‌شود —
+            # حتی اگر این دور پیام جدیدی نبوده ولی پیام‌های قبلی ذخیره شده‌اند
+            if _maybe_auto_report(force=True):
+                S.add_log("گزارش HTML به‌روز شد — دکمه «مشاهده گزارش» فعال است", "ok")
+            with S.lock:
+                if total_msgs == 0 and not S.stop_event.is_set():
+                    S.queue_hint = True  # بنر هشدار «صف خالی» در داشبورد
 
         # ---------- مرحله ۲: دریافت زنده ----------
         with S.lock:
@@ -1124,6 +1181,8 @@ def _collector_worker(token, backlog=True):
             # بایگانی خام قبل از هر پردازشی — هیچ پیامی گم نمی‌شود
             S.archive_raw(updates)
 
+            with S.lock:
+                before_live = len(S.messages)
             for upd in updates:
                 uid = upd.get("update_id") if isinstance(upd, dict) else None
                 if uid is not None:
@@ -1133,6 +1192,15 @@ def _collector_worker(token, backlog=True):
                     if uid in S.seen_updates:
                         continue  # قبلاً ذخیره شده (ری‌استارت برنامه)
                 _store_update(client, upd, force_all=False, live=True)
+
+            # از نسخه ۴.۵: با رسیدن هر پیام جدید (حتی در دریافت زنده) گزارش
+            # خودکار به‌روز می‌شود تا هیچ‌وقت گزارش کهنه/خالی دیده نشود
+            with S.lock:
+                stored_now = len(S.messages) != before_live
+            if stored_now:
+                S.queue_hint = False
+                if _maybe_auto_report():
+                    S.add_log("گزارش HTML با پیام‌های جدید به‌روز شد", "info")
 
             if offset != S.offset:
                 with S.lock:
@@ -1180,16 +1248,78 @@ def api_rules():
     return jsonify(ok=True, count=len(rules))
 
 
+RAW_KINDS = (
+    "message", "edited_message", "channel_post", "edited_channel_post",
+    "my_chat_member", "chat_member",
+)
+
+
+def _looks_like_raw_update(u):
+    """تشخیص آپدیت خام: update_id + یکی از کلیدهای نوع آپدیت
+
+    نکته: پیام‌های ذخیره‌شده هم update_id دارند؛ پس فقط وجود update_id کافی نیست.
+    """
+    return (
+        isinstance(u, dict)
+        and "update_id" in u
+        and any(k in u for k in RAW_KINDS)
+    )
+
+
+def _load_json_any(path):
+    """تشخیص هوشمند نوع فایل JSON (نسخه ۴.۵)
+
+    همه فرمت‌های ممکن با یک دکمه پذیرفته می‌شوند:
+        - فایل پشتیبان خود برنامه: {"messages": [...], "raw_updates": [...]}
+        - آرشیو خام raw_updates.json: لیست آپدیت‌های خام (دارای update_id)
+        - messages.json نسخه‌های قبلی یا خروجی سایر ابزارها: لیست پیام‌ها
+    خروجی: (لیست پیام‌ها، لیست آپدیت‌های خام)
+    """
+    with open(path, encoding="utf-8") as fh:
+        data = json.load(fh)
+    raw_updates = []
+    messages = []
+    if isinstance(data, dict):
+        ru = data.get("raw_updates")
+        if isinstance(ru, list):
+            raw_updates = [u for u in ru if _looks_like_raw_update(u)]
+        msgs = data.get("messages")
+        if isinstance(msgs, list):
+            messages = [m for m in msgs if isinstance(m, dict)]
+        if not raw_updates and not messages:
+            if _looks_like_raw_update(data):
+                raw_updates = [data]  # یک آپدیت خام تکی
+            else:
+                raise ValueError("ساختار فایل JSON قابل قبول نیست")
+    elif isinstance(data, list):
+        sample = [u for u in data[:5] if isinstance(u, dict)]
+        if sample and all(_looks_like_raw_update(u) for u in sample):
+            raw_updates = [u for u in data if _looks_like_raw_update(u)]
+        else:
+            messages = import_json(path)
+    else:
+        raise ValueError("ساختار فایل JSON قابل قبول نیست")
+    return messages, raw_updates
+
+
 @app.route("/api/import", methods=["POST"])
 def api_import():
+    """ورود پیام‌های قدیمی از CSV/JSON — از نسخه ۴.۵ همه فرمت‌ها با یک دکمه:
+    فایل پشتیبان برنامه، آرشیو خام نسخه قبلی، messages.json و خروجی CSV.
+    بعد از ورود، عکس‌های قابل دانلود گرفته و گزارش خودکار به‌روز می‌شود.
+    """
     f = request.files.get("file")
     if not f or not f.filename:
         return jsonify(ok=False, error="فایلی ارسال نشد"), 400
     suffix = ".csv" if f.filename.lower().endswith(".csv") else ".json"
     path = os.path.join(tempfile.gettempdir(), f"bale_import_{int(time.time())}{suffix}")
     f.save(path)
+    incoming, raw_updates = [], []
     try:
-        incoming = import_csv(path) if suffix == ".csv" else import_json(path)
+        if suffix == ".csv":
+            incoming = import_csv(path)
+        else:
+            incoming, raw_updates = _load_json_any(path)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         S.add_log(f"خطای ورود فایل {f.filename}: {exc}", "error")
         return jsonify(ok=False, error=str(exc)), 400
@@ -1198,11 +1328,24 @@ def api_import():
             os.remove(path)
         except OSError:
             pass
-    with S.lock:
-        added = merge_messages(S.messages, incoming)
-        save_messages(S.messages, MESSAGES_PATH)
+
+    added = 0
+    if raw_updates:
+        # آپدیت‌های خام اول در آرشیو ذخیره می‌شوند (ضد گم‌شدن) و سپس
+        # با همان مسیر پردازش عادی نرمال و ذخیره می‌شوند (با دانلود عکس‌ها)
+        S.archive_raw(raw_updates)
+        token = _current_token()
+        client = BaleClient(token) if token else None
+        added += _recover_from_raw(client)
+    if incoming:
+        with S.lock:
+            added += merge_messages(S.messages, incoming)
+            save_messages(S.messages, MESSAGES_PATH)
+    if added:
+        S.queue_hint = False
+        _maybe_auto_report(force=True)
     S.add_log(f"{added} پیام از فایل «{f.filename}» وارد شد", "info")
-    return jsonify(ok=True, added=added)
+    return jsonify(ok=True, added=added, raw=len(raw_updates))
 
 
 @app.route("/api/demo", methods=["POST"])
@@ -1264,6 +1407,28 @@ def api_report():
         S.report_url = f"/output/{name}"
     S.add_log(f"گزارش HTML ساخته شد ({len(msgs)} پیام)", "info")
     return jsonify(ok=True, url=f"/output/{name}?ts={int(time.time())}", path=path)
+
+
+@app.route("/api/backup")
+def api_backup():
+    """دانلود فایل پشتیبان کامل (پیام‌ها + آرشیو خام) — نسخه ۴.۵
+
+    برای انتقال امن داده‌ها بین پوشه‌ها و نسخه‌های برنامه؛ همین فایل با
+    دکمه «ورود پیام‌های قدیمی / پشتیبان» در هر نسخه دیگر بازیابی می‌شود.
+    """
+    with S.lock:
+        payload = {
+            "app": APP_NAME,
+            "version": VERSION,
+            "exported": now_str(),
+            "messages": list(S.messages),
+            "raw_updates": list(S.raw),
+        }
+    filename = f"bale_backup_{time.strftime('%Y%m%d_%H%M%S')}.json"
+    body = json.dumps(payload, ensure_ascii=False)
+    resp = app.response_class(body, mimetype="application/json")
+    resp.headers["Content-Disposition"] = f"attachment; filename={filename}"
+    return resp
 
 
 @app.route("/api/clear_error", methods=["POST"])

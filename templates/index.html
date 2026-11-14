@@ -27,6 +27,16 @@
 
 <main class="grid">
 
+  <!-- بنر هشدار صف خالی (نسخه ۴.۵) -->
+  <div class="alert-box hidden" id="queueBanner">
+    <b>صف سرور بله خالی است و پیام قبلی‌ای برای خواندن پیدا نشد.</b>
+    <p>دلیل: ربات‌ها به تاریخچه چت دسترسی ندارند و سرور بله هم پیام‌های رسیده به ربات را فقط حدود ۲۴ ساعت نگه می‌دارد. برای بازیابی داده‌های قبلی یکی از این دو راه را انجام دهید:</p>
+    <ol>
+      <li>اگر پوشه یا نسخه قدیمی برنامه فایل <b>raw_updates.json</b> یا <b>messages.json</b> دارد، با دکمه «ورود پیام‌های قدیمی / پشتیبان» همان فایل را وارد کنید — عکس‌ها هم در صورت امکان خودکار دانلود می‌شوند.</li>
+      <li>پیام‌ها را از گروه به چت ربات دوباره <b>فوروارد</b> کنید (می‌توانید چند پیام را با هم انتخاب و یک‌جا فوروارد کنید) — برنامه بلافاصله همه را ذخیره و گزارش HTML را خودکار به‌روز می‌کند.</li>
+    </ol>
+  </div>
+
   <!-- پیشرفت پروژه -->
   <section class="card span-12">
     <div class="card-head">
@@ -137,17 +147,18 @@
   <!-- گزارش -->
   <section class="card span-8">
     <div class="card-head"><h2>۶) گزارش HTML</h2></div>
-    <p class="hint">گزارش تک‌فایلی با آمار، نمودار دسته‌ها، تاریخ شمسی و فیلتر دسته‌ها ساخته می‌شود.</p>
+    <p class="hint">گزارش تک‌فایلی با آمار، نمودار دسته‌ها، تاریخ شمسی و فیلتر دسته‌ها ساخته می‌شود. از نسخه ۴.۵ با رسیدن هر پیام جدید، گزارش خودکار به‌روز می‌شود — دیگر لازم نیست دستی دوباره بسازید.</p>
     <div class="row">
       <button class="btn" id="btnReport">ساخت گزارش</button>
       <a class="btn ghost hidden" id="btnOpen" target="_blank" href="#">مشاهده گزارش</a>
       <button class="btn ghost" id="btnDemo">افزودن ۱۰ پیام نمونه (تست)</button>
     </div>
     <div class="row">
-      <button class="btn ghost" id="btnImport">ورود پیام‌های قدیمی (CSV/JSON)</button>
+      <button class="btn ghost" id="btnImport">ورود پیام‌های قدیمی / پشتیبان (CSV/JSON)</button>
       <button class="btn ghost" id="btnRecover">بازیابی از آرشیو خام</button>
-      <span class="mini-hint">خروجی CSV ابزار bale_chat_backup را همین‌جا وارد کنید</span>
+      <button class="btn ghost" id="btnBackup">دانلود فایل پشتیبان داده‌ها</button>
     </div>
+    <span class="mini-hint">فایل پشتیبان (bale_backup_*.json)، آرشیو خام (raw_updates.json) یا messages.json پوشه قبلی، یا خروجی CSV ابزار bale_chat_backup را همین‌جا وارد کنید — نوع فایل خودکار تشخیص داده می‌شود</span>
     <input type="file" id="importFile" accept=".csv,.json" hidden>
   </section>
 

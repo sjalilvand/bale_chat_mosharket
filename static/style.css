@@ -496,3 +496,20 @@ footer {
 .toast.ok { background: #065f46; }
 
 .hidden { display: none !important; }
+
+/* بنر هشدار «صف سرور بله خالی است» (نسخه ۴.۵) */
+.alert-box {
+  grid-column: 1 / -1;
+  background: #fff7e6;
+  border: 1.5px solid #f0c36d;
+  border-radius: 12px;
+  padding: 14px 18px;
+  color: #7a4d05;
+  font-size: 13.5px;
+  line-height: 1.9;
+  margin-bottom: 4px;
+}
+.alert-box b { color: #92400e; }
+.alert-box p { margin: 6px 0 0; }
+.alert-box ol { margin: 8px 0 0; padding-right: 20px; }
+.alert-box li { margin: 4px 0; }
