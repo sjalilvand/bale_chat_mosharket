@@ -451,6 +451,7 @@ def api_connect():
         "info",
     )
     _save_settings()
+    _ensure_worker()  # دریافت زنده به‌طور خودکار آغاز می‌شود — بدون نیاز به دکمه
     return jsonify(ok=True, bot={"name": me.get("first_name", ""), "username": me.get("username", "")})
 
 
@@ -635,6 +636,27 @@ def api_stop():
         S.stop_event.set()
         S.add_log("دستور توقف دریافت صادر شد", "info")
     return jsonify(ok=True)
+
+
+def _ensure_worker():
+    """شروع خودکار دریافت زنده اگر توکن موجود باشد و رشته‌ای در حال کار نباشد
+
+    با این کار دیگر «هیچ اتفاقی نمی‌افتد» معنا ندارد؛ به‌محض اتصال یا اجرای
+    برنامه، هر پیامی که به ربات برسد (فوروارد، عکس، کامنت) بلافاصله ذخیره می‌شود.
+    """
+    token = _current_token()
+    if not token:
+        return
+    with S.lock:
+        if S.running:
+            return
+        S.rules_saved = True
+        S.stop_event.clear()
+        S.running = True
+        S.started_once = True
+        S.thread = threading.Thread(target=_collector_worker, args=(token,), daemon=True)
+        S.thread.start()
+    S.add_log("دریافت زنده پیام‌ها به‌طور خودکار آغاز شد — پیام‌های رسیده به ربات ذخیره می‌شوند", "info")
 
 
 @app.route("/api/read_all", methods=["POST"])
@@ -894,7 +916,10 @@ def _collector_worker(token):
 
             if draining and not updates:
                 _finish_drain(client)
-                break
+                with S.lock:
+                    S.draining = False
+                # ادامه دریافت زنده پس از پایان «خواندن همه» — برنامه متوقف نمی‌شود
+                continue
             if draining:
                 time.sleep(0.15)
     except Exception as exc:  # محافظت از رشته پس‌زمینه
@@ -1125,6 +1150,9 @@ def main():
     port = _find_free_port(int(os.environ.get("PORT", 5000)))
     url = f"http://127.0.0.1:{port}"
     print(f"Bale Chat Mosharket (نسخه ۴) روی {url} در حال اجراست — مرورگر باز می‌شود ...")
+    if _current_token():
+        # اگر قبلاً توکن ذخیره شده، دریافت زنده بلافاصله و بدون دکمه آغاز می‌شود
+        threading.Timer(0.5, _ensure_worker).start()
     threading.Timer(1.5, lambda: webbrowser.open(url)).start()
     app.run(host="127.0.0.1", port=port, debug=False)
 
