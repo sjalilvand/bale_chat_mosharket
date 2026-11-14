@@ -144,14 +144,20 @@
     <div class="recent" id="recent"></div>
   </section>
 
-  <!-- گزارش -->
+  <!-- گزارش و خروجی‌ها -->
   <section class="card span-8">
-    <div class="card-head"><h2>۶) گزارش HTML</h2></div>
-    <p class="hint">گزارش تک‌فایلی با آمار، نمودار دسته‌ها، تاریخ شمسی و فیلتر دسته‌ها ساخته می‌شود. از نسخه ۴.۵ با رسیدن هر پیام جدید، گزارش خودکار به‌روز می‌شود — دیگر لازم نیست دستی دوباره بسازید.</p>
+    <div class="card-head">
+      <h2>۶) گزارش و خروجی‌های HTML</h2>
+      <span class="chip" id="exportCountChip">۰ خروجی</span>
+    </div>
+    <p class="hint">هر بار «گرفتن خروجی جداگانه» را بزنید یک فایل HTML <b>جدید</b> با تاریخ و ساعت ساخته می‌شود و در فهرست پایین می‌ماند — خروجی‌های قبلی حذف نمی‌شوند و هر کدام را می‌توانید جدا ببینید یا حذف کنید. گزارش زنده هم با هر پیام جدید خودکار به‌روز می‌شود. گزارش‌ها تعاملی‌اند: جست‌وجو، فیلتر دسته/فرستنده/گروه، فقط عکس‌دارها و حذف هر پیام از نمایش.</p>
     <div class="row">
-      <button class="btn" id="btnReport">ساخت گزارش</button>
-      <a class="btn ghost hidden" id="btnOpen" target="_blank" href="#">مشاهده گزارش</a>
+      <button class="btn" id="btnExport">گرفتن خروجی جداگانه (فایل جدید)</button>
+      <a class="btn ghost hidden" id="btnOpen" target="_blank" href="/output/report.html">گزارش زنده (خودکار)</a>
       <button class="btn ghost" id="btnDemo">افزودن ۱۰ پیام نمونه (تست)</button>
+    </div>
+    <div class="export-list" id="exportList">
+      <div class="empty-row">هنوز خروجی جداگانه‌ای گرفته نشده است</div>
     </div>
     <div class="row">
       <button class="btn ghost" id="btnImport">ورود پیام‌های قدیمی / پشتیبان (CSV/JSON)</button>
@@ -160,6 +166,25 @@
     </div>
     <span class="mini-hint">فایل پشتیبان (bale_backup_*.json)، آرشیو خام (raw_updates.json) یا messages.json پوشه قبلی، یا خروجی CSV ابزار bale_chat_backup را همین‌جا وارد کنید — نوع فایل خودکار تشخیص داده می‌شود</span>
     <input type="file" id="importFile" accept=".csv,.json" hidden>
+  </section>
+
+  <!-- پاک‌سازی و دور جدید (نسخه ۴.۶) -->
+  <section class="card span-12 reset-zone">
+    <div class="card-head">
+      <h2>۷) پاک‌سازی پیام‌های قبلی و شروع دور جدید</h2>
+      <span class="chip warn">داده‌های پاک‌شده قابل بازگشت نیستند</span>
+    </div>
+    <p class="hint">هر وقت می‌خواهید دور جدید شروع کنید و همه پیام‌های قبلی از پایگاه داده حذف شوند، از این بخش استفاده کنید. قبل از پاک‌سازی، اگر خروجی HTML می‌خواهید نگه دارید، اول «گرفتن خروجی جداگانه» را بزنید.</p>
+    <div class="row checks">
+      <label class="check"><input type="checkbox" id="optClearRaw"> حذف آرشیو خام و عکس‌های دانلودشده هم (پاک‌سازی کامل)</label>
+      <label class="check"><input type="checkbox" id="optClearReports"> حذف همه فایل‌های خروجی قبلی هم</label>
+      <label class="check"><input type="checkbox" id="optSkipServer"> پیام‌های موجود در صف سرور بله رد شوند (دیگر خوانده نشوند)</label>
+      <label class="check"><input type="checkbox" id="optResync" checked> بعد از پاک‌سازی، دوباره از بات همگام‌سازی شود</label>
+    </div>
+    <div class="row">
+      <button class="btn danger" id="btnReset">پاک‌سازی پیام‌های قبلی</button>
+      <span class="mini-hint">پاک‌سازی فقط داده‌های داخلی برنامه است؛ پیام‌های خود گروه بله دست‌نخورده می‌مانند</span>
+    </div>
   </section>
 
   <!-- درباره -->

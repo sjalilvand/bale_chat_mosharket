@@ -4,6 +4,16 @@
 داشبورد گرافیکی مدرن در مرورگر برای دریافت، دسته‌بندی و ساخت گزارش HTML
 از پیام‌های گروه‌های پیام‌رسان بله، همراه با نمایش زنده روند پیشرفت.
 
+امکانات نسخه ۴.۶:
+    - «گرفتن خروجی جداگانه»: هر بار یک فایل HTML جدید با تاریخ و ساعت ساخته
+      می‌شود و در فهرست «خروجی‌ها» باقی می‌ماند (حذف تک‌تک هم ممکن است)
+    - «پاک‌سازی پیام‌های قبلی»: شروع دور جدید — حذف همه پیام‌های ذخیره‌شده
+      با گزینه‌های اختیاری: حذف آرشیو خام و عکس‌ها، حذف خروجی‌های قبلی،
+      رد کردن پیام‌های موجود در صف سرور بله و همگام‌سازی دوباره بعد از پاک‌سازی
+    - گزارش HTML تعاملی: جست‌وجوی زنده، فیلتر چندگانه دسته‌ها/فرستنده/گروه،
+      فیلتر «فقط عکس‌دار»، حذف هر پیام از نمایش (✕) و پیوند «در پاسخ به»
+      با پرش و هایلایت پیام مرتبط
+
 امکانات نسخه ۴.۵:
     - به‌روزرسانی خودکار گزارش HTML با رسیدن «هر» پیام جدید (حتی در دریافت زنده) —
       دیگر هیچ‌وقت گزارش کهنه/خالی نشان داده نمی‌شود
@@ -64,6 +74,7 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 MESSAGES_PATH = os.path.join(BASE, "messages.json")
 SETTINGS_PATH = os.path.join(BASE, "settings.json")
 RAW_PATH = os.path.join(BASE, "raw_updates.json")
+EXPORTS_PATH = os.path.join(BASE, "exports.json")
 MEDIA_DIR = os.path.join(BASE, "media")
 OUTPUT_DIR = os.path.join(BASE, "output")
 
@@ -137,8 +148,29 @@ class AppState:
         self.raw = []  # بایگانی خام آپدیت‌ها — ضد گم‌شدن پیام
         self.raw_ids = set()
         self.last_private_chat = None
+        self.exports = []  # فهرست خروجی‌های جداگانه (نسخه ۴.۶)
+        self.gen = 0  # نسلی — برای توقف سریع کارگر هنگام پاک‌سازی
         self._load_raw()
+        self._load_exports()
         self._load_settings()
+
+    # ---------- فهرست خروجی‌های جداگانه (نسخه ۴.۶) ----------
+
+    def _load_exports(self):
+        try:
+            with open(EXPORTS_PATH, encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return
+        if isinstance(data, list):
+            self.exports = [e for e in data if isinstance(e, dict)]
+
+    def _save_exports(self):
+        with self.lock:
+            try:
+                save_json(self.exports, EXPORTS_PATH, indent=2)
+            except OSError:
+                pass
 
     # ---------- بایگانی خام ----------
 
@@ -437,6 +469,7 @@ def api_state():
             "target": S.target,
             "report_ready": S.report_ready,
             "report_url": S.report_url,
+            "exports": list(S.exports),
             "error": S.error,
             "draining": S.draining,
             "phase": S.phase,
@@ -1045,8 +1078,13 @@ def _collector_worker(token, backlog=True):
     مرحله ۱ (backlog): همه آپدیت‌های موجود در صف سرور بله خوانده و ذخیره می‌شوند
                        (بدون فیلتر گروه) و در پایان گزارش HTML خودکار ساخته می‌شود
     مرحله ۲ (live): دریافت زنده برای همیشه ادامه دارد — هر پیام جدید فوری ذخیره می‌شود
+
+    با تغییر S.gen (مثلاً هنگام پاک‌سازی) کارگر سریع و بدون ذخیره پیام جدید خارج می‌شود.
     """
     try:
+        with S.lock:
+            my_gen = S.gen
+        gen_alive = lambda: (S.gen == my_gen)  # noqa: E731
         client = BaleClient(token)
         try:
             me = client.get_me()
@@ -1084,7 +1122,7 @@ def _collector_worker(token, backlog=True):
                 "info",
             )
             empty_rounds = 0
-            while not S.stop_event.is_set() and empty_rounds < 2:
+            while (not S.stop_event.is_set()) and gen_alive() and empty_rounds < 2:
                 try:
                     updates = client.get_updates(
                         offset=offset, limit=100, timeout=1
@@ -1092,7 +1130,7 @@ def _collector_worker(token, backlog=True):
                 except BaleBotError as exc:
                     S.add_log(f"{exc} — تلاش مجدد پس از ۵ ثانیه", "error")
                     for _ in range(50):
-                        if S.stop_event.is_set():
+                        if S.stop_event.is_set() or not gen_alive():
                             break
                         time.sleep(0.1)
                     continue
@@ -1109,6 +1147,8 @@ def _collector_worker(token, backlog=True):
                         if uid in S.seen_updates:
                             continue  # قبلاً ذخیره شده (ری‌استارت برنامه)
                     _store_update(client, upd, force_all=True, live=False)
+                if not gen_alive():
+                    break
 
                 if updates:
                     empty_rounds = 0
@@ -1164,7 +1204,7 @@ def _collector_worker(token, backlog=True):
             "مرحله ۲ — دریافت زنده آغاز شد؛ هر پیام جدید (گروه یا چت ربات) بلافاصله ذخیره می‌شود",
             "info",
         )
-        while not S.stop_event.is_set():
+        while (not S.stop_event.is_set()) and gen_alive():
             draining = S.draining
             try:
                 updates = client.get_updates(
@@ -1173,10 +1213,12 @@ def _collector_worker(token, backlog=True):
             except BaleBotError as exc:
                 S.add_log(f"{exc} — تلاش مجدد پس از ۵ ثانیه", "error")
                 for _ in range(50):
-                    if S.stop_event.is_set():
+                    if S.stop_event.is_set() or not gen_alive():
                         break
                     time.sleep(0.1)
                 continue
+            if not gen_alive():
+                break
 
             # بایگانی خام قبل از هر پردازشی — هیچ پیامی گم نمی‌شود
             S.archive_raw(updates)
@@ -1384,29 +1426,237 @@ def api_messages():
 # ---------------- گزارش ----------------
 
 
-@app.route("/api/report", methods=["POST"])
-def api_report():
+def _make_export():
+    """ساخت «خروجی جداگانه»: فایل HTML جدید با نام زمان‌دار (نسخه ۴.۶)
+
+    هر بار یک فایل تازه ساخته می‌شود و در فهرست خروجی‌ها ثبت می‌گردد؛
+    گزارش زنده (report.html) دست‌نخورده باقی می‌ماند.
+    خروجی: (entry یا None، پیام خطا)
+    """
     with S.lock:
         msgs = list(S.messages)
         title = S.chat_title or None
     if not msgs:
-        return jsonify(ok=False, error="پیامی ذخیره نشده است"), 400
+        return None, "پیامی ذخیره نشده است"
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    name = "report.html"
+    name = time.strftime("report_%Y%m%d_%H%M%S") + ".html"
+    path = os.path.join(OUTPUT_DIR, name)
     try:
-        path = build_report(
-            msgs,
-            os.path.join(OUTPUT_DIR, name),
-            group_title=title,
-            media_base=MEDIA_DIR,
-        )
+        build_report(msgs, path, group_title=title, media_base=MEDIA_DIR)
+    except OSError as exc:
+        return None, str(exc)
+    entry = {
+        "name": name,
+        "url": f"/output/{name}",
+        "count": len(msgs),
+        "when": now_str(),
+        "time": int(time.time()),
+        "size": os.path.getsize(path),
+        "title": title or "",
+    }
+    with S.lock:
+        S.exports.insert(0, entry)
+        S.exports = S.exports[:60]  # نگهداری حداکثر ۶۰ خروجی اخیر
+        S._save_exports()
+    S.add_log(
+        f"خروجی جداگانه ساخته شد: {name} ({len(msgs)} پیام)",
+        "ok",
+    )
+    return entry, ""
+
+
+@app.route("/api/report", methods=["POST"])
+def api_report():
+    """ساخت خروجی جداگانه جدید — هر بار یک فایل تازه با تاریخ و ساعت"""
+    entry, err = _make_export()
+    if entry is None:
+        return jsonify(ok=False, error=err), 400
+    return jsonify(
+        ok=True,
+        url=f"{entry['url']}?ts={int(time.time())}",
+        name=entry["name"],
+        count=entry["count"],
+        path=os.path.join(OUTPUT_DIR, entry["name"]),
+    )
+
+
+@app.route("/api/export", methods=["POST"])
+def api_export():
+    """همان ساخت گزارش — با نام روشن‌تر «گرفتن خروجی جداگانه"""
+    return api_report()
+
+
+@app.route("/api/exports/delete", methods=["POST"])
+def api_exports_delete():
+    """حذف یک فایل خروجی از فهرست و از روی دیسک"""
+    data = request.get_json(silent=True) or {}
+    name = str(data.get("name") or "").strip()
+    if (
+        not name
+        or "/" in name
+        or "\\" in name
+        or ".." in name
+        or not name.startswith("report_")
+        or not name.endswith(".html")
+    ):
+        return jsonify(ok=False, error="نام فایل معتبر نیست"), 400
+    with S.lock:
+        found = any(e.get("name") == name for e in S.exports)
+    if not found:
+        return jsonify(ok=False, error="این خروجی در فهرست نیست"), 404
+    try:
+        os.remove(os.path.join(OUTPUT_DIR, name))
     except OSError as exc:
         return jsonify(ok=False, error=str(exc)), 500
     with S.lock:
-        S.report_ready = True
-        S.report_url = f"/output/{name}"
-    S.add_log(f"گزارش HTML ساخته شد ({len(msgs)} پیام)", "info")
-    return jsonify(ok=True, url=f"/output/{name}?ts={int(time.time())}", path=path)
+        S.exports = [e for e in S.exports if e.get("name") != name]
+        S._save_exports()
+        if S.report_url == f"/output/{name}":
+            S.report_ready = False
+            S.report_url = ""
+    S.add_log(f"خروجی «{name}» حذف شد", "info")
+    return jsonify(ok=True)
+
+
+@app.route("/api/reset", methods=["POST"])
+def api_reset():
+    """پاک‌سازی پیام‌های قبلی و شروع دور جدید (نسخه ۴.۶)
+
+    گزینه‌ها (همه اختیاری):
+        clear_raw     — حذف آرشیو خام و عکس‌های دانلودشده هم (پاک‌سازی کامل)
+        clear_reports — حذف همه فایل‌های خروجی قبلی هم
+        skip_server   — پیام‌های موجود در صف سرور بله تأیید و رد شوند
+                        (دیگر هیچ‌وقت خوانده نشوند)
+        resync        — بعد از پاک‌سازی، دوباره از بات همگام‌سازی شود
+    """
+    data = request.get_json(silent=True) or {}
+    clear_raw = bool(data.get("clear_raw"))
+    clear_reports = bool(data.get("clear_reports"))
+    skip_server = bool(data.get("skip_server"))
+    resync = bool(data.get("resync"))
+
+    with S.lock:
+        S.gen += 1  # کارگر فعال سریع خارج می‌شود
+        S.stop_event.set()
+        S.messages = []
+        S.seen_updates = set()
+        S.session_count = 0
+        S.queue_hint = False
+        try:
+            save_messages(S.messages, MESSAGES_PATH)
+        except OSError as exc:
+            S.add_log(f"ذخیره پس از پاک‌سازی ناموفق بود: {exc}", "error")
+        removed_reports = 0
+        if clear_raw:
+            S.raw = []
+            S.raw_ids = set()
+            S.offset = 0
+            try:
+                os.remove(RAW_PATH)
+            except OSError:
+                pass
+            try:
+                for fn in os.listdir(MEDIA_DIR):
+                    p = os.path.join(MEDIA_DIR, fn)
+                    if os.path.isfile(p):
+                        os.remove(p)
+            except OSError:
+                pass
+        if clear_reports:
+            for e in list(S.exports):
+                try:
+                    os.remove(os.path.join(OUTPUT_DIR, str(e.get("name") or "")))
+                    removed_reports += 1
+                except OSError:
+                    pass
+            S.exports = []
+            try:
+                os.remove(EXPORTS_PATH)
+            except OSError:
+                pass
+            try:
+                os.remove(os.path.join(OUTPUT_DIR, "report.html"))
+            except OSError:
+                pass
+            S.report_ready = False
+            S.report_url = ""
+            S.last_report_ts = 0.0
+    note = "پیام‌های ذخیره‌شده پاک شد — دور جدید آماده است"
+    if clear_reports:
+        note += f" ({removed_reports} فایل خروجی هم حذف شد)"
+    if clear_raw:
+        note += " — آرشیو خام و عکس‌ها هم پاک شد"
+    S.add_log(note, "warn")
+
+    token = _current_token()
+    if (skip_server or resync) and token:
+        def _post_reset():
+            with S.lock:
+                old_thread = S.thread
+            if old_thread is not None:
+                old_thread.join(timeout=30)  # خروج کامل کارگر قبلی
+            if skip_server:
+                try:
+                    n = _skip_server_backlog(BaleClient(token))
+                    with S.lock:
+                        S.offset = max(S.offset, 0)
+                    if n:
+                        S.add_log(
+                            f"{n} پیام قدیمی صف سرور بله رد شد — دیگر خوانده نمی‌شوند",
+                            "info",
+                        )
+                    else:
+                        S.add_log("صف سرور بله از قبل خالی بود", "info")
+                    _save_settings()
+                except BaleBotError as exc:
+                    S.add_log(f"رد کردن صف سرور ناموفق بود: {exc}", "error")
+            if resync:
+                if _start_worker(token, draining=True):
+                    S.add_log(
+                        "همگام‌سازی دوباره آغاز شد — پیام‌های جدید خوانده می‌شوند",
+                        "info",
+                    )
+        threading.Thread(target=_post_reset, daemon=True).start()
+    return jsonify(ok=True, removed_reports=removed_reports)
+
+
+def _skip_server_backlog(client):
+    """رد کردن (تأیید) همه آپدیت‌های موجود در صف سرور بله
+
+    فقط برای «شروع کاملاً تازه» استفاده می‌شود؛ آپدیت‌های ردشده
+    برای همیشه از سرور حذف می‌شوند و دیگر خوانده نمی‌شوند.
+    """
+    skipped = 0
+    for _ in range(30):
+        updates = client.get_updates(offset=0, limit=100, timeout=0) or []
+        if not updates:
+            return skipped
+        uids = [
+            u.get("update_id")
+            for u in updates
+            if isinstance(u, dict) and u.get("update_id") is not None
+        ]
+        if not uids:
+            return skipped
+        client.get_updates(offset=max(uids) + 1, limit=1, timeout=0)
+        skipped += len(updates)
+    return skipped
+
+
+def _start_worker(token, draining=False):
+    """شروع رشته دریافت (بدون چک توکن — فقط برای استفاده داخلی)"""
+    with S.lock:
+        if S.running:
+            return False
+        S.rules_saved = True
+        S.error = ""
+        S.stop_event.clear()
+        S.draining = bool(draining)
+        S.running = True
+        S.started_once = True
+        S.thread = threading.Thread(target=_collector_worker, args=(token,), daemon=True)
+        S.thread.start()
+    return True
 
 
 @app.route("/api/backup")

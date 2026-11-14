@@ -513,3 +513,116 @@ footer {
 .alert-box p { margin: 6px 0 0; }
 .alert-box ol { margin: 8px 0 0; padding-right: 20px; }
 .alert-box li { margin: 4px 0; }
+
+/* ---------- نسخه ۴.۶: خروجی‌های جداگانه و پاک‌سازی ---------- */
+
+.export-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.export-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 9px 13px;
+}
+
+.export-item .e-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.export-item .e-info b {
+  font-size: 12.5px;
+  color: var(--ink);
+  direction: ltr;
+  text-align: right;
+  word-break: break-all;
+}
+
+.export-item .e-info span {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.export-item .e-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.mini-btn {
+  font-family: inherit;
+  font-size: 12px;
+  border-radius: 9px;
+  padding: 5px 13px;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+  border: 1px solid var(--border);
+}
+
+.mini-btn.view {
+  background: #e8f7f1;
+  color: var(--primary-2);
+  border-color: #bfe9d9;
+}
+
+.mini-btn.view:hover { background: #d3f0e3; }
+
+.mini-btn.del {
+  background: #fef2f2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+.mini-btn.del:hover { background: #fee2e2; }
+
+.btn.danger {
+  background: var(--danger);
+  color: #fff;
+}
+
+.btn.danger:hover { background: #b91c1c; }
+
+.reset-zone {
+  border: 1.5px solid #fecaca;
+  background: linear-gradient(180deg, #fffafa, #fff);
+}
+
+.chip.warn {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.row.checks {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+}
+
+.row.checks .check {
+  font-size: 13px;
+  color: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.row.checks .check input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+}

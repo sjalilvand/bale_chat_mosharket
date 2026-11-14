@@ -109,6 +109,43 @@ function renderRecent(list) {
     </div>`).join("") || `<div class="empty-row">هنوز پیامی نیست</div>`;
 }
 
+function renderExports(list) {
+  const box = $("exportList");
+  const chip = $("exportCountChip");
+  if (chip) chip.textContent = fa(list.length) + " خروجی";
+  if (!list.length) {
+    box.innerHTML = `<div class="empty-row">هنوز خروجی جداگانه‌ای گرفته نشده — هر بار با دکمه بالا یک فایل HTML جدید با تاریخ و ساعت ساخته می‌شود</div>`;
+    return;
+  }
+  box.innerHTML = list.map((e) => `
+    <div class="export-item">
+      <div class="e-info">
+        <b>${esc(e.name)}</b>
+        <span>${esc(e.when || "")} · ${fa(e.count)} پیام · ${fmtSize(e.size)}${e.title ? " · " + esc(e.title) : ""}</span>
+      </div>
+      <div class="e-actions">
+        <a class="mini-btn view" href="${esc(e.url)}?ts=${e.time || 0}" target="_blank">مشاهده</a>
+        <button class="mini-btn del" data-name="${esc(e.name)}">حذف</button>
+      </div>
+    </div>`).join("");
+  box.querySelectorAll(".mini-btn.del").forEach((b) => {
+    b.onclick = guard(async () => {
+      if (!confirm(`فایل خروجی «${b.dataset.name}» حذف شود؟ این کار فقط فایل خروجی را پاک می‌کند و پیام‌های ذخیره‌شده دست‌نخورده می‌مانند.`)) return;
+      await api("/api/exports/delete", { name: b.dataset.name });
+      toast("خروجی حذف شد", "ok");
+      refresh();
+    });
+  });
+}
+
+function fmtSize(n) {
+  n = parseInt(n, 10);
+  if (!n || isNaN(n)) return "—";
+  if (n >= 1048576) return fa((n / 1048576).toFixed(1)) + " MB";
+  if (n >= 1024) return fa(Math.round(n / 1024)) + " KB";
+  return fa(n) + " B";
+}
+
 function renderLog(logs, running, draining, phase) {
   const box = $("log");
   box.innerHTML = logs.map((l) => `
@@ -175,7 +212,10 @@ async function refresh() {
     if (s.report_ready && s.report_url) {
       $("btnOpen").classList.remove("hidden");
       $("btnOpen").href = s.report_url;
+    } else {
+      $("btnOpen").classList.add("hidden");
     }
+    renderExports(s.exports || []);
     if (s.error) {
       toast(s.error, "err");
       await fetch("/api/clear_error", { method: "POST" }).catch(() => {});
@@ -284,12 +324,36 @@ $("targetInput").onchange = guard(async () => {
   refresh();
 });
 
-$("btnReport").onclick = guard(async () => {
-  const r = await api("/api/report", {});
-  $("btnOpen").classList.remove("hidden");
-  $("btnOpen").href = r.url;
+$("btnExport").onclick = guard(async () => {
+  const r = await api("/api/export", {});
+  toast(`خروجی جداگانه ساخته شد: ${r.name} (${fa(r.count)} پیام)`, "ok");
   window.open(r.url, "_blank");
-  toast("گزارش ساخته شد", "ok");
+  refresh();
+});
+
+$("btnReset").onclick = guard(async () => {
+  const clearRaw = $("optClearRaw").checked;
+  const clearReports = $("optClearReports").checked;
+  const skipServer = $("optSkipServer").checked;
+  const resync = $("optResync").checked;
+  const parts = ["همه پیام‌های ذخیره‌شده پاک شود؟"];
+  if (clearRaw) parts.push("آرشیو خام و عکس‌ها هم حذف می‌شوند");
+  if (clearReports) parts.push("همه فایل‌های خروجی قبلی هم حذف می‌شوند");
+  if (skipServer) parts.push("پیام‌های موجود در صف سرور بله برای همیشه رد می‌شوند و دیگر خوانده نمی‌شوند");
+  if (resync) parts.push("بعد از پاک‌سازی، دوباره از بات همگام‌سازی می‌شود");
+  if (!confirm(parts.join("\n"))) return;
+  const r = await api("/api/reset", {
+    clear_raw: clearRaw,
+    clear_reports: clearReports,
+    skip_server: skipServer,
+    resync: resync,
+  });
+  toast(
+    clearReports
+      ? `پاک‌سازی کامل شد (${fa(r.removed_reports)} فایل خروجی هم حذف شد)`
+      : "پاک‌سازی کامل شد — دور جدید آماده است",
+    "ok"
+  );
   refresh();
 });
 
