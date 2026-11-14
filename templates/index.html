@@ -97,8 +97,10 @@
       <h2>۴) دریافت پیام‌ها</h2>
       <span class="chip live hidden" id="liveChip">در حال دریافت</span>
     </div>
+    <button class="btn big" id="btnReadAll">خواندن همه پیام‌های بات + ساخت خودکار گزارش HTML</button>
+    <span class="mini-hint">این دکمه همه پیام‌های رسیده به بات (فورواردها، عکس‌ها، کامنت‌ها، فایل‌ها) را یک‌جا می‌خواند، دسته‌بندی می‌کند و در پایان گزارش HTML را خودکار می‌سازد — یک دکمه، همه‌چیز.</span>
     <div class="row">
-      <button class="btn" id="btnStart">شروع دریافت</button>
+      <button class="btn" id="btnStart">شروع دریافت زنده</button>
       <button class="btn ghost" id="btnStop" disabled>توقف</button>
       <label class="target-lbl">هدف: <input type="number" id="targetInput" min="1" value="50" class="num"> پیام</label>
     </div>
@@ -110,7 +112,7 @@
       <div class="bar"><i id="readingBar"></i></div>
       <span class="mini-hint" id="readingNote">۰ پیام از هدف ۵۰</span>
     </div>
-    <p class="hint">برای پیام‌های قدیمی‌تر از ورود ربات: آن‌ها را از گروه به چت خصوصی ربات <b>فوروارد</b> کنید — این نسخه عکس، کپشن و ویدیو را هم ذخیره می‌کند.</p>
+    <p class="hint">برای پیام‌های قدیمی‌تر از ورود ربات: آن‌ها را از گروه به چت خصوصی ربات <b>فوروارد</b> کنید (روش درستی است — ربات به تاریخچه قبل از ورود دسترسی ندارد) و بعد همین دکمه را بزنید. متن، عکس، کپشن و کامنت‌ها همه ذخیره می‌شوند. <b>نکته:</b> اگر قبلاً پیام‌هایی به بات فرستاده‌اید و ذخیره نشده بودند، آن پیام‌ها از صف سرور بله حذف شده‌اند و باید یک‌بار دیگر فوروارد شوند. همیشه فقط یک نسخه از برنامه را اجرا کنید.</p>
     <div class="log" id="log"></div>
   </section>
 
@@ -122,6 +124,8 @@
       <div class="tile"><b id="stPeople">0</b><span>شرکت‌کنندگان</span></div>
       <div class="tile"><b id="stPhotos">0</b><span>عکس‌ها</span></div>
       <div class="tile"><b id="stMedia">0</b><span>کل رسانه‌ها</span></div>
+      <div class="tile"><b id="stFwd">0</b><span>بازنشرها</span></div>
+      <div class="tile"><b id="stRaw">0</b><span>آرشیو خام</span></div>
       <div class="tile"><b id="stSession">0</b><span>این نشست</span></div>
       <div class="tile"><b id="stCats">0</b><span>دسته‌ها</span></div>
     </div>
@@ -141,6 +145,7 @@
     </div>
     <div class="row">
       <button class="btn ghost" id="btnImport">ورود پیام‌های قدیمی (CSV/JSON)</button>
+      <button class="btn ghost" id="btnRecover">بازیابی از آرشیو خام</button>
       <span class="mini-hint">خروجی CSV ابزار bale_chat_backup را همین‌جا وارد کنید</span>
     </div>
     <input type="file" id="importFile" accept=".csv,.json" hidden>
@@ -149,13 +154,14 @@
   <!-- درباره -->
   <section class="card span-4 about">
     <div class="card-head"><h2>درباره</h2></div>
-    <p class="hint">این نسخه عکس‌ها، آلبوم‌ها، کپشن، کامنت‌ها (پاسخ‌ها)، ویدیو و بازنشرها را می‌خواند و در گزارش نشان می‌دهد. ربات‌ها فقط پیام‌های بعد از اضافه‌شدن را می‌بینند؛ برای تاریخچه کامل، پیام‌ها را به ربات فوروارد کنید یا از ابزار <b>bale_chat_backup</b> خروجی بگیرید و با «ورود پیام‌های قدیمی» اضافه کنید.</p>
+    <p class="hint">این نسخه عکس‌ها، آلبوم‌ها، کپشن، کامنت‌ها (پاسخ‌ها)، ویدیو و بازنشرها را می‌خواند و در گزارش نشان می‌دهد. هر پیام قبل از هر پردازشی در «آرشیو خام» ذخیره می‌شود؛ پس حتی اگر برنامه خراب شود هیچ پیامی گم نمی‌شود. ربات‌ها فقط پیام‌های بعد از اضافه‌شدن را می‌بینند؛ برای تاریخچه کامل، پیام‌ها را به ربات فوروارد کنید یا از ابزار <b>bale_chat_backup</b> خروجی بگیرید و با «ورود پیام‌های قدیمی» اضافه کنید.</p>
+    <p class="hint">همیشه فقط یک نسخه از برنامه را اجرا کنید؛ نسخه‌های قدیمی را ببندید تا پیام‌ها بین دو برنامه تقسیم نشوند. اگر پورت 5000 اشغال باشد، این نسخه خودکار روی پورت بعدی باز می‌شود (آدرس را در پنجره سیاه/کنسول ببینید).</p>
     <p class="hint" id="msgPath"></p>
   </section>
 
 </main>
 
-<footer>ساخته‌شده برای معاونت مشارکت‌های مردمی — نسخه وب ۲.۰</footer>
+<footer>ساخته‌شده برای معاونت مشارکت‌های مردمی — نسخه وب ۴.۰</footer>
 
 <div class="toast hidden" id="toast"></div>
 

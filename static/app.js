@@ -84,6 +84,8 @@ function renderStats(st) {
   $("stPeople").textContent = fa(st.participants);
   $("stPhotos").textContent = fa(st.photos || 0);
   $("stMedia").textContent = fa(st.media || 0);
+  $("stFwd").textContent = fa(st.forwards || 0);
+  $("stRaw").textContent = fa(st.raw || 0);
   $("stCats").textContent = fa(Object.keys(st.categories).length);
 
   const cats = Object.entries(st.categories);
@@ -107,7 +109,7 @@ function renderRecent(list) {
     </div>`).join("") || `<div class="empty-row">هنوز پیامی نیست</div>`;
 }
 
-function renderLog(logs, running) {
+function renderLog(logs, running, draining) {
   const box = $("log");
   box.innerHTML = logs.map((l) => `
     <div class="ln ${esc(l.kind)}">
@@ -116,8 +118,11 @@ function renderLog(logs, running) {
     </div>`).join("") || `<div class="ln info"><span class="x">آماده دریافت پیام‌ها...</span></div>`;
   box.scrollTop = box.scrollHeight;
 
-  $("liveChip").classList.toggle("hidden", !running);
+  const chip = $("liveChip");
+  chip.textContent = draining ? "در حال خواندن همه پیام‌ها" : "در حال دریافت";
+  chip.classList.toggle("hidden", !running);
   $("btnStart").disabled = running;
+  $("btnReadAll").disabled = running;
   $("btnStop").disabled = !running;
 }
 
@@ -129,7 +134,10 @@ async function refresh() {
     renderGroups(s.chat);
     renderStats(s.stats);
     renderRecent(s.recent);
-    renderLog(s.log, s.running);
+    renderLog(s.log, s.running, s.draining);
+    if (s.draining) {
+      $("readingNote").textContent = `${fa(s.progress.read)} پیام خوانده شد — در حال خواندن همه پیام‌های بات ...`;
+    }
     if (s.rules && document.activeElement !== $("rulesInput") && !$("rulesInput").value) {
       $("rulesInput").value = s.rules;
     }
@@ -223,7 +231,13 @@ $("btnRules").onclick = guard(async () => {
 
 $("btnStart").onclick = guard(async () => {
   await api("/api/start", {});
-  toast("دریافت پیام‌ها آغاز شد", "ok");
+  toast("دریافت زنده پیام‌ها آغاز شد", "ok");
+  refresh();
+});
+
+$("btnReadAll").onclick = guard(async () => {
+  await api("/api/read_all", {});
+  toast("خواندن همه پیام‌های بات آغاز شد؛ در پایان گزارش خودکار ساخته می‌شود", "ok");
   refresh();
 });
 
@@ -255,6 +269,17 @@ $("btnDemo").onclick = guard(async () => {
 });
 
 $("btnImport").onclick = () => $("importFile").click();
+
+$("btnRecover").onclick = guard(async () => {
+  const r = await api("/api/recover_raw", {});
+  toast(
+    r.recovered
+      ? `${fa(r.recovered)} پیام از آرشیو خام بازیابی شد`
+      : "چیزی برای بازیابی در آرشیو خام نبود",
+    "ok"
+  );
+  refresh();
+});
 
 $("importFile").onchange = guard(async () => {
   const f = $("importFile").files[0];

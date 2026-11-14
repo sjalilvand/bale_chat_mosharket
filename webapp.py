@@ -1,18 +1,25 @@
 # -*- coding: utf-8 -*-
-"""Bale Chat Mosharket — نسخه وب ۳ (Flask)
+"""Bale Chat Mosharket — نسخه وب ۴ (Flask)
 
 داشبورد گرافیکی مدرن در مرورگر برای دریافت، دسته‌بندی و ساخت گزارش HTML
 از پیام‌های گروه‌های پیام‌رسان بله، همراه با نمایش زنده روند پیشرفت.
 
-امکانات نسخه ۳:
-    - افزودن گروه با لینک دعوت ble.ir/join/... (با راهنمای گام‌به‌گام)
+امکانات نسخه ۴:
+    - دکمه «خواندن همه پیام‌های بات + ساخت گزارش HTML» یک‌مرحله‌ای
+    - بایگانی خام (raw_updates.json): هر آپدیت قبل از هر پردازشی ذخیره می‌شود؛
+      حتی اگر برنامه وسط کار خراب شود هیچ پیامی گم نمی‌شود و با دکمه
+      «بازیابی از آرشیو خام» می‌توان همه‌چیز را بازسازی کرد
+    - offset ماندگار در settings.json: با ری‌استارت برنامه پیام‌ها
+      نه تکرار می‌شوند و نه گم می‌شوند
+    - تأییدیه فوری ذخیره در چت خصوصی ربات (کاربر می‌بیند ذخیره شده)
     - خواندن همه انواع پیام: عکس، آلبوم، ویدیو، ویس، فایل، کپشن،
       کامنت‌ها (پاسخ‌ها)، بازنشرها و پیام‌های کانال
     - دانلود خودکار عکس‌ها و نمایش آن‌ها در داشبورد و گزارش HTML
-    - ذخیره پیام‌هایی که به ربات فوروارد می‌شوند (چت خصوصی)
+    - ذخیره پیام‌هایی که به ربات فوروارد می‌شوند (چت خصوصی) — همیشه بدون فیلتر
+    - انتخاب خودکار پورت آزاد (5000 تا 5009) تا دو نسخه با هم تداخل نکنند
 
 اجرا:
-    python main.py        →  http://127.0.0.1:5000
+    python main.py        →  http://127.0.0.1:5000 (یا اولین پورت آزاد)
 """
 
 import json
@@ -36,14 +43,23 @@ from storage import (
     load_messages,
     make_message,
     merge_messages,
+    save_json,
     save_messages,
 )
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 MESSAGES_PATH = os.path.join(BASE, "messages.json")
 SETTINGS_PATH = os.path.join(BASE, "settings.json")
+RAW_PATH = os.path.join(BASE, "raw_updates.json")
 MEDIA_DIR = os.path.join(BASE, "media")
 OUTPUT_DIR = os.path.join(BASE, "output")
+
+GUIDE_TEXT = (
+    "سلام! پیام‌های شما ذخیره می‌شود.\n\n"
+    "برای خواندن همه پیام‌های قبلی، در داشبورد برنامه دکمه «خواندن همه پیام‌های بات + "
+    "ساخت خودکار گزارش HTML» را بزنید.\n"
+    "فوروارد پیام‌های قدیمی گروه به این چت کاملاً درست است؛ متن، عکس، کپشن و کامنت‌ها همه ذخیره می‌شوند."
+)
 
 DEFAULT_RULES = """اطلاعیه: اطلاعیه، اعلام، هماهنگ، توجه داشته باشید، مهم
 جلسه و قرار: جلسه، قرار، حضوری، آنلاین
@@ -90,6 +106,7 @@ class AppState:
         }
         self.known_chats = {}  # chat_id(str) → {id,title,type,count}
         self.running = False
+        self.draining = False  # حالت «خواندن همه پیام‌ها»
         self.started_once = False
         self.stop_event = threading.Event()
         self.thread = None
@@ -99,7 +116,47 @@ class AppState:
         self.report_ready = False
         self.report_url = ""
         self.error = ""
+        self.offset = 0  # آخرین update_id تأییدشده + ۱ (ماندگار در settings)
+        self.raw = []  # بایگانی خام آپدیت‌ها — ضد گم‌شدن پیام
+        self.raw_ids = set()
+        self.last_private_chat = None
+        self._load_raw()
         self._load_settings()
+
+    # ---------- بایگانی خام ----------
+
+    def _load_raw(self):
+        try:
+            with open(RAW_PATH, encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return
+        if isinstance(data, list):
+            self.raw = [u for u in data if isinstance(u, dict)]
+            self.raw_ids = {
+                u.get("update_id") for u in self.raw if u.get("update_id") is not None
+            }
+
+    def archive_raw(self, updates):
+        """ذخیره همه آپدیت‌های خام قبل از هر پردازشی — هیچ پیامی گم نمی‌شود"""
+        with self.lock:
+            added = 0
+            for upd in updates:
+                if not isinstance(upd, dict):
+                    continue
+                uid = upd.get("update_id")
+                if uid is not None and uid in self.raw_ids:
+                    continue
+                self.raw.append(upd)
+                if uid is not None:
+                    self.raw_ids.add(uid)
+                added += 1
+            if added:
+                try:
+                    save_json(self.raw, RAW_PATH)
+                except OSError:
+                    pass
+            return added
 
     def _load_settings(self):
         """بازیابی تنظیمات قبلی (توکن، گروه، قوانین، گفتگوهای شناخته‌شده)"""
@@ -129,6 +186,10 @@ class AppState:
             self.known_chats = {
                 str(k): (v if isinstance(v, dict) else {}) for k, v in chats.items()
             }
+        try:
+            self.offset = max(0, int(data.get("offset") or 0))
+        except (TypeError, ValueError):
+            self.offset = 0
 
     # ---------- لاگ ----------
 
@@ -259,10 +320,13 @@ class AppState:
         people = set()
         photos = 0
         media_count = 0
+        forwards = 0
         for m in msgs:
             p = m.get("sender_name") or m.get("username") or m.get("sender_id")
             if p:
                 people.add(str(p))
+            if m.get("forward"):
+                forwards += 1
             for item in m.get("media") or []:
                 media_count += 1
                 if item.get("type") == "photo":
@@ -273,6 +337,8 @@ class AppState:
             "participants": len(people),
             "photos": photos,
             "media": media_count,
+            "forwards": forwards,
+            "raw": len(self.raw),
             "categories": dict(cats.most_common()),
         }
 
@@ -355,6 +421,8 @@ def api_state():
             "report_ready": S.report_ready,
             "report_url": S.report_url,
             "error": S.error,
+            "draining": S.draining,
+            "raw_count": len(S.raw),
         }
     return jsonify(state)
 
@@ -562,9 +630,31 @@ def api_start():
 
 @app.route("/api/stop", methods=["POST"])
 def api_stop():
+    S.draining = False
     if S.running:
         S.stop_event.set()
         S.add_log("دستور توقف دریافت صادر شد", "info")
+    return jsonify(ok=True)
+
+
+@app.route("/api/read_all", methods=["POST"])
+def api_read_all():
+    """خواندن همه پیام‌های موجود در بات (فورواردها، عکس‌ها، کامنت‌ها)
+    و سپس ساخت خودکار گزارش HTML"""
+    token = _current_token()
+    if not token:
+        return jsonify(ok=False, error="ابتدا توکن را وارد و اتصال را تست کنید"), 400
+    with S.lock:
+        S.rules_saved = True
+        S.error = ""
+        S.draining = True
+        if not S.running:
+            S.stop_event.clear()
+            S.running = True
+            S.started_once = True
+            S.thread = threading.Thread(target=_collector_worker, args=(token,), daemon=True)
+            S.thread.start()
+    S.add_log("حالت «خواندن همه پیام‌ها» فعال شد — همه فورواردها خوانده می‌شوند", "info")
     return jsonify(ok=True)
 
 
@@ -598,6 +688,8 @@ def _download_media(client, msg):
         fid = item.get("file_id")
         if not fid:
             continue
+        if item.get("file"):
+            continue  # قبلاً دانلود شده است
         try:
             info = client.get_file(fid)
             fpath = str(info.get("file_path") or "")
@@ -613,7 +705,52 @@ def _download_media(client, msg):
     return saved
 
 
+def _send_private(client, chat_id, text):
+    """ارسال امن پیام به چت خصوصی — خطا هرگز رشته دریافت را نمی‌شکند"""
+    try:
+        client.send_message(chat_id, text)
+    except BaleBotError:
+        pass
+
+
+def _finish_drain(client):
+    """پایان «خواندن همه»: ساخت خودکار گزارش HTML + پیام خلاصه به کاربر"""
+    with S.lock:
+        msgs = list(S.messages)
+        total = len(msgs)
+        session = S.session_count
+        target_chat = S.last_private_chat
+    S.add_log(
+        f"خواندن همه پیام‌ها کامل شد — مجموع {total} پیام ({session} پیام در این دور)",
+        "info",
+    )
+    if not msgs:
+        S.add_log("پیام جدیدی در بات پیدا نشد", "error")
+        return
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    try:
+        build_report(
+            msgs,
+            os.path.join(OUTPUT_DIR, "report.html"),
+            group_title=S.chat_title or None,
+            media_base=MEDIA_DIR,
+        )
+        with S.lock:
+            S.report_ready = True
+            S.report_url = "/output/report.html"
+        S.add_log("گزارش HTML به‌صورت خودکار ساخته شد — دکمه «مشاهده گزارش» فعال است", "info")
+    except OSError as exc:
+        S.add_log(f"ساخت خودکار گزارش ناموفق بود: {exc}", "error")
+    if target_chat is not None:
+        _send_private(
+            client,
+            target_chat,
+            f"خواندن کامل شد: مجموع {total} پیام ذخیره شد و گزارش HTML ساخته شد.",
+        )
+
+
 def _collector_worker(token):
+    was_draining = False
     try:
         client = BaleClient(token)
         try:
@@ -624,10 +761,14 @@ def _collector_worker(token):
             )
         except BaleBotError:
             pass
-        offset = 0
+        with S.lock:
+            offset = S.offset or 0
         while not S.stop_event.is_set():
+            draining = S.draining
             try:
-                updates = client.get_updates(offset=offset, limit=100, timeout=20) or []
+                updates = client.get_updates(
+                    offset=offset, limit=100, timeout=1 if draining else 20
+                ) or []
             except BaleBotError as exc:
                 S.add_log(f"{exc} — تلاش مجدد پس از ۵ ثانیه", "error")
                 for _ in range(50):
@@ -635,12 +776,18 @@ def _collector_worker(token):
                         break
                     time.sleep(0.1)
                 continue
+
+            # بایگانی خام قبل از هر پردازشی — هیچ پیامی گم نمی‌شود
+            S.archive_raw(updates)
+
             for upd in updates:
                 uid = upd.get("update_id")
                 if uid is not None:
                     if uid < offset:
                         continue
                     offset = uid + 1
+                    if uid in S.seen_updates:
+                        continue  # قبلاً ذخیره شده (ری‌استارت برنامه)
 
                 # اضافه/حذف شدن ربات از گروهی → گفتگو را ثبت کن
                 member = normalize_member_update(upd)
@@ -661,13 +808,24 @@ def _collector_worker(token):
                 chat_id = msg.get("chat_id")
                 ctype = msg.get("chat_type") or ""
                 S.record_chat(chat_id, msg.get("chat_title"), ctype)
-
-                # فیلتر گفتگو: پیام‌های چت خصوصی (فوروارد کاربر) همیشه ذخیره می‌شوند
-                if S.chat_id is not None and ctype != "private" and chat_id != S.chat_id:
-                    continue
+                if ctype == "private":
+                    with S.lock:
+                        S.last_private_chat = chat_id
 
                 cat_text = (msg.get("text") or msg.get("caption") or "").strip()
+
+                # فیلتر گفتگو فقط در حالت زنده؛ در «خواندن همه» هر چیز ذخیره می‌شود
+                if (
+                    not draining
+                    and S.chat_id is not None
+                    and ctype != "private"
+                    and chat_id != S.chat_id
+                ):
+                    continue
+
                 if cat_text.startswith("/"):
+                    if ctype == "private":
+                        _send_private(client, chat_id, GUIDE_TEXT)
                     continue  # دستورات ربات ذخیره نمی‌شوند
 
                 # دانلود رسانه‌ها (عکس/ویدیو/فایل)
@@ -703,6 +861,8 @@ def _collector_worker(token):
                         S.add_log(f"ذخیره فایل پیام‌ها ناموفق بود: {exc}", "error")
 
                 kind = "ویرایش" if msg.get("edited") else "پیام"
+                if msg.get("forward"):
+                    kind += " (بازنشر)"
                 shown = cat_text[:44] + ("…" if len(cat_text) > 44 else "") or (
                     f"[{len(msg.get('media') or [])} رسانه]"
                     if msg.get("media")
@@ -712,13 +872,32 @@ def _collector_worker(token):
                     f"{kind} #{len(S.messages)} — {msg['sender_name']}: {shown} ← دسته: {msg['category']}",
                     "msg",
                 )
-        with S.lock:
-            S.running = False
-        S.add_log("دریافت پیام متوقف شد", "info")
+                # تأییدیه فوری در چت خصوصی (فقط حالت زنده)
+                if ctype == "private" and not draining:
+                    _send_private(
+                        client, chat_id,
+                        f"ذخیره شد — پیام شماره {len(S.messages)} در پایگاه داده برنامه.",
+                    )
+
+            if offset != S.offset:
+                with S.lock:
+                    S.offset = offset
+                _save_settings()
+
+            if draining and not updates:
+                _finish_drain(client)
+                break
+            if draining:
+                time.sleep(0.15)
     except Exception as exc:  # محافظت از رشته پس‌زمینه
-        with S.lock:
-            S.running = False
         S.add_log(f"خطای غیرمنتظره در دریافت: {exc}", "error")
+    finally:
+        with S.lock:
+            was_draining = S.draining
+            S.running = False
+            S.draining = False
+        if not was_draining:
+            S.add_log("دریافت پیام متوقف شد", "info")
 
 
 # ---------------- دسته‌بندی و داده ----------------
@@ -837,6 +1016,50 @@ def api_clear_error():
     return jsonify(ok=True)
 
 
+@app.route("/api/recover_raw", methods=["POST"])
+def api_recover_raw():
+    """بازسازی پیام‌ها از بایگانی خام — حتی اگر پردازش قبلی ناقص بوده باشد"""
+    with S.lock:
+        raw = list(S.raw)
+        seen = set(S.seen_updates)
+    token = _current_token()
+    client = BaleClient(token) if token else None
+    recovered = 0
+    for upd in raw:
+        if not isinstance(upd, dict):
+            continue
+        uid = upd.get("update_id")
+        if uid is not None and uid in seen:
+            continue
+        msg = normalize_update(upd)
+        if msg is None:
+            continue
+        cat_text = (msg.get("text") or msg.get("caption") or "").strip()
+        if cat_text.startswith("/"):
+            continue  # دستورات ربات بازیابی نمی‌شوند
+        if client is not None and msg.get("media"):
+            try:
+                _download_media(client, msg)
+            except Exception:
+                pass
+        msg["category"] = S.categorizer.categorize(cat_text) if cat_text else FALLBACK
+        with S.lock:
+            S.messages.append(msg)
+            if uid is not None:
+                S.seen_updates.add(uid)
+        recovered += 1
+    if recovered:
+        with S.lock:
+            try:
+                save_messages(S.messages, MESSAGES_PATH)
+            except OSError:
+                pass
+        S.add_log(f"{recovered} پیام از بایگانی خام بازیابی شد", "info")
+    else:
+        S.add_log("پیام بازیابی‌نشده‌ای در بایگانی خام وجود ندارد", "info")
+    return jsonify(ok=True, recovered=recovered)
+
+
 # ---------------- ابزارها ----------------
 
 
@@ -866,6 +1089,7 @@ def _save_settings():
             "chat_title": S.chat_title,
             "rules": S.rules_text,
             "target": S.target,
+            "offset": S.offset,
             "known_chats": S.known_chats,
         }
     try:
@@ -875,11 +1099,25 @@ def _save_settings():
         pass
 
 
+def _find_free_port(start=5000, tries=10):
+    """اولین پورت آزاد از start به بعد — تا دو نسخه برنامه با هم تداخل نکنند"""
+    import socket
+
+    for port in range(start, start + tries):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            try:
+                sock.bind(("127.0.0.1", port))
+                return port
+            except OSError:
+                continue
+    return start
+
+
 def main():
-    port = int(os.environ.get("PORT", 5000))
-    threading.Timer(
-        1.5, lambda: webbrowser.open(f"http://127.0.0.1:{port}")
-    ).start()
+    port = _find_free_port(int(os.environ.get("PORT", 5000)))
+    url = f"http://127.0.0.1:{port}"
+    print(f"Bale Chat Mosharket (نسخه ۴) روی {url} در حال اجراست — مرورگر باز می‌شود ...")
+    threading.Timer(1.5, lambda: webbrowser.open(url)).start()
     app.run(host="127.0.0.1", port=port, debug=False)
 
 

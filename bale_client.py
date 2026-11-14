@@ -75,6 +75,10 @@ class BaleClient:
         """اطلاعات یک گفتگو (گروه/کانال/چت خصوصی)"""
         return self._call("getChat", {"chat_id": chat_id})
 
+    def send_message(self, chat_id, text):
+        """ارسال پیام متنی — برای تأییدیه ذخیره‌شدن پیام‌ها به کاربر"""
+        return self._call("sendMessage", {"chat_id": chat_id, "text": text})
+
     # ----- فایل‌ها (عکس، ویدیو، صوت، سند) -----
 
     def get_file(self, file_id):

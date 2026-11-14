@@ -64,14 +64,14 @@ def load_messages(path):
     return [m for m in data if isinstance(m, dict)]
 
 
-def save_messages(messages, path):
-    """ذخیره اتمیک (بدون خطر خراب شدن فایل در حین نوشتن)"""
+def save_json(data, path, indent=None):
+    """ذخیره اتمیک هر ساختار JSON (بدون خطر خراب شدن فایل در حین نوشتن)"""
     directory = os.path.dirname(os.path.abspath(path))
     os.makedirs(directory, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=directory, suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(messages, f, ensure_ascii=False, indent=2)
+            json.dump(data, f, ensure_ascii=False, indent=indent)
         os.replace(tmp, path)
     finally:
         if os.path.exists(tmp):
@@ -79,6 +79,11 @@ def save_messages(messages, path):
                 os.remove(tmp)
             except OSError:
                 pass
+
+
+def save_messages(messages, path):
+    """ذخیره اتمیک لیست پیام‌ها"""
+    save_json(messages, path, indent=2)
 
 
 def _field(row, keys):

@@ -6,6 +6,7 @@ venv/
 # داده‌های محلی کاربر (هیچ‌وقت به مخزن ارسال نشود)
 settings.json
 messages.json
+raw_updates.json
 media/
 report*.html
 output/
