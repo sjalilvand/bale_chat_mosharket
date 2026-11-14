@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# داده‌های محلی کاربر (هیچ‌وقت به مخزن ارسال نشود)
+settings.json
+messages.json
+report*.html
+*.tmp
+
+# خروجی ابزار بکاپ
+bale_backups/
+bale_user_data/
