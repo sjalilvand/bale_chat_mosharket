@@ -109,7 +109,7 @@ function renderRecent(list) {
     </div>`).join("") || `<div class="empty-row">هنوز پیامی نیست</div>`;
 }
 
-function renderLog(logs, running, draining) {
+function renderLog(logs, running, draining, phase) {
   const box = $("log");
   box.innerHTML = logs.map((l) => `
     <div class="ln ${esc(l.kind)}">
@@ -119,12 +119,20 @@ function renderLog(logs, running, draining) {
   box.scrollTop = box.scrollHeight;
 
   const chip = $("liveChip");
-  chip.textContent = draining ? "در حال خواندن همه پیام‌ها" : "در حال دریافت";
+  chip.classList.remove("backlog");
+  if (phase === "backlog") {
+    chip.textContent = "در حال خواندن پیام‌های قبلی...";
+    chip.classList.add("backlog");
+  } else {
+    chip.textContent = draining ? "در حال خواندن همه پیام‌ها" : "دریافت زنده فعال";
+  }
   chip.classList.toggle("hidden", !running);
   $("btnStart").disabled = running;
   $("btnReadAll").disabled = running;
   $("btnStop").disabled = !running;
 }
+
+let refreshCount = 0;
 
 async function refresh() {
   try {
@@ -138,9 +146,17 @@ async function refresh() {
     renderGroups(s.chat);
     renderStats(s.stats);
     renderRecent(s.recent);
-    renderLog(s.log, s.running, s.draining);
+    renderLog(s.log, s.running, s.draining, s.phase);
     if (s.draining) {
       $("readingNote").textContent = `${fa(s.progress.read)} پیام خوانده شد — در حال خواندن همه پیام‌های بات ...`;
+    }
+    // فهرست گروه‌ها هر ۱۵ ثانیه خودکار به‌روز می‌شود (با رسیدن اولین پیام گروه، گروه ظاهر می‌شود)
+    refreshCount += 1;
+    if (refreshCount % 15 === 1 && s.connected) {
+      fetch("/api/groups", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+        .then((r) => r.json())
+        .then((g) => { if (g.ok) renderGroupList(g.groups); })
+        .catch(() => {});
     }
     if (s.rules && document.activeElement !== $("rulesInput") && !$("rulesInput").value) {
       $("rulesInput").value = s.rules;
@@ -241,7 +257,7 @@ $("btnStart").onclick = guard(async () => {
 
 $("btnReadAll").onclick = guard(async () => {
   await api("/api/read_all", {});
-  toast("خواندن همه پیام‌های بات آغاز شد؛ در پایان گزارش خودکار ساخته می‌شود", "ok");
+  toast("همگام‌سازی آغاز شد؛ همه پیام‌های موجود خوانده می‌شوند و در پایان گزارش خودکار ساخته می‌شود", "ok");
   refresh();
 });
 

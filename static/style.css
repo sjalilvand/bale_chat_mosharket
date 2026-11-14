@@ -152,6 +152,11 @@ body {
   padding-right: 24px;
 }
 
+.chip.live.backlog {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
 .chip.live::before {
   content: "";
   position: absolute;
