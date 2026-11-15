@@ -4,6 +4,21 @@
 داشبورد گرافیکی مدرن در مرورگر برای دریافت، دسته‌بندی و ساخت گزارش HTML
 از پیام‌های گروه‌های پیام‌رسان بله، همراه با نمایش زنده روند پیشرفت.
 
+امکانات نسخه ۵.۳ — «خواندن از نو همه پیام‌ها» (بخش جدید ۵ داشبورد):
+    - بخش اختصاصی «خواندن از نو همه پیام‌ها (چت ربات + همه گروه‌ها)» برای
+      حالتی که کاربر پیام‌های قبلی را پاک کرده است — با یک دکمه:
+      پایگاه داده خالی می‌شود، همه پیام‌ها از نو خوانده می‌شوند، گزارش HTML
+      از اول ساخته می‌شود و بعد دریافت زنده ادامه پیدا می‌کند
+    - حالت «بازیابی کامل»: پیام‌های پاک‌شده از آرشیو خام (raw_updates.json)
+      بازسازی می‌شوند + همه آپدیت‌های موجود در صف سرور بله از صفر دوباره
+      خوانده می‌شوند (چت ربات + همه گروه‌ها، بدون فیلتر گروه)
+    - حالت «شروع کاملاً تازه»: آرشیو خام و عکس‌های دانلودشده هم پاک می‌شود
+      و فقط پیام‌های موجود در صف سرور بله (حداکثر ۲۴ ساعت اخیر) خوانده می‌شود
+    - گزینه حذف فایل‌های خروجی HTML قبلی هم‌زمان با خواندن از نو
+    - توضیح شفاف داخل خود داشبورد: چه چیزهایی برمی‌گردد، چه چیزهایی فقط با
+      فوروارد دوباره به چت ربات قابل بازیابی است
+    - اندپوینت جدید: POST /api/reread
+
 امکانات نسخه ۵.۱ — «استودیوی گزارش عملکرد حوزه» (صفحه جدید /studio):
     - صفحه کاملاً جدید جدا از داشبورد: انتخاب پیام، چیدمان، مشخصات گزارش و خروجی
       HTML و پاورپوینت همه در یک صفحه
@@ -888,6 +903,113 @@ def api_read_all():
         "info",
     )
     return jsonify(ok=True)
+
+
+@app.route("/api/reread", methods=["POST"])
+def api_reread():
+    """خواندن از نو همه پیام‌ها (نسخه ۵.۳) — مخصوص حالت «پیام‌ها را پاک کرده‌ام»
+
+    پایگاه داده خالی می‌شود و همه‌چیز از صفر دوباره خوانده می‌شود؛
+    بعد گزارش HTML از اول ساخته می‌شود و دریافت زنده ادامه پیدا می‌کند.
+
+    ورودی (JSON):
+        mode          — "recover" (پیش‌فرض؛ بازیابی کامل):
+                          پیام‌های قبلی از آرشیو خام (raw_updates.json)
+                          بازسازی می‌شوند + همه آپدیت‌های موجود در صف سرور بله
+                          (چت ربات + همه گروه‌ها، بدون فیلتر) دوباره خوانده می‌شود
+                        "fresh" (شروع کاملاً تازه):
+                          آرشیو خام و عکس‌های دانلودشده هم پاک می‌شود؛ فقط
+                          آپدیت‌های موجود در صف سرور بله خوانده می‌شوند
+                          (سرور بله فقط حدود ۲۴ ساعت آخر را نگه می‌دارد)
+        clear_reports — حذف همه فایل‌های خروجی HTML قبلی هم
+    """
+    data = request.get_json(silent=True) or {}
+    mode = "fresh" if str(data.get("mode") or "").strip().lower() == "fresh" else "recover"
+    clear_reports = bool(data.get("clear_reports"))
+    token = _current_token()
+    if not token:
+        return jsonify(ok=False, error="ابتدا توکن ربات را وارد و اتصال را تست کنید"), 400
+
+    removed_reports = 0
+    with S.lock:
+        S.gen += 1  # کارگر فعال سریع و بدون ذخیره پیام جدید خارج می‌شود
+        S.stop_event.set()
+        S.messages = []
+        S.seen_updates = set()
+        S.session_count = 0
+        S.queue_hint = False
+        S.report_ready = False
+        S.report_url = ""
+        S.last_report_ts = 0.0
+        S.offset = 0  # صف سرور بله از صفر خوانده می‌شود
+        if mode == "fresh":
+            S.raw = []
+            S.raw_ids = set()
+        if clear_reports:
+            for e in list(S.exports):
+                try:
+                    os.remove(os.path.join(OUTPUT_DIR, str(e.get("name") or "")))
+                    removed_reports += 1
+                except OSError:
+                    pass
+            S.exports = []
+            try:
+                os.remove(EXPORTS_PATH)
+            except OSError:
+                pass
+            try:
+                os.remove(os.path.join(OUTPUT_DIR, "report.html"))
+            except OSError:
+                pass
+        try:
+            save_messages(S.messages, MESSAGES_PATH)
+        except OSError as exc:
+            S.add_log(f"ذخیره پس از پاک‌سازی ناموفق بود: {exc}", "error")
+
+    if clear_reports:
+        S.add_log(
+            f"خواندن از نو: {removed_reports} فایل خروجی قبلی هم حذف شد", "info",
+        )
+
+    def _reread_worker():
+        with S.lock:
+            old_thread = S.thread
+        if old_thread is not None:
+            old_thread.join(timeout=30)  # خروج کامل کارگر قبلی
+        if mode == "fresh":
+            # پاک‌سازی کامل آرشیو خام و عکس‌ها (شروع کاملاً تازه)
+            try:
+                os.remove(RAW_PATH)
+            except OSError:
+                pass
+            try:
+                for fn in os.listdir(MEDIA_DIR):
+                    p = os.path.join(MEDIA_DIR, fn)
+                    if os.path.isfile(p):
+                        os.remove(p)
+            except OSError:
+                pass
+            _save_settings()
+            if _start_worker(token, draining=True):
+                S.add_log(
+                    "شروع کاملاً تازه — پایگاه داده، آرشیو خام و عکس‌ها پاک شد؛ "
+                    "حالا همه پیام‌های موجود در صف سرور بله (چت ربات + همه "
+                    "گروه‌ها) از صفر خوانده می‌شوند ...",
+                    "warn",
+                )
+        else:
+            _save_settings()
+            if _start_worker(token, draining=True):
+                S.add_log(
+                    "خواندن از نو آغاز شد — اول همه پیام‌های قبلی از آرشیو خام "
+                    "بازسازی می‌شوند، بعد همه آپدیت‌های موجود در بات و همه "
+                    "گروه‌ها دوباره خوانده می‌شوند و در پایان گزارش HTML از "
+                    "اول ساخته می‌شود ...",
+                    "warn",
+                )
+
+    threading.Thread(target=_reread_worker, daemon=True).start()
+    return jsonify(ok=True, mode=mode, removed_reports=removed_reports)
 
 
 @app.route("/api/target", methods=["POST"])

@@ -312,6 +312,24 @@ $("btnReadAll").onclick = guard(async () => {
   refresh();
 });
 
+// خواندن از نو همه پیام‌ها (نسخه ۵.۳) — مخصوص حالت «پیام‌ها را پاک کرده‌ام»
+$("btnReread").onclick = guard(async () => {
+  const fresh = $("rereadFresh").checked;
+  const clearReports = $("rereadClearReports").checked;
+  const parts = ["همه پیام‌های ذخیره‌شده فعلی پاک می‌شوند و همه پیام‌ها از نو خوانده می‌شوند (چت ربات + همه گروه‌ها)."];
+  parts.push(fresh
+    ? "حالت «شروع کاملاً تازه»: آرشیو خام و عکس‌ها هم پاک می‌شود؛ فقط پیام‌های ۲۴ ساعت اخیر سرور بله قابل بازیابی است."
+    : "حالت «بازیابی کامل»: پیام‌های قبلی از آرشیو خام برنامه بازسازی می‌شوند.");
+  if (clearReports) parts.push("همه فایل‌های خروجی HTML قبلی هم حذف می‌شوند.");
+  if (!confirm(parts.join("\n"))) return;
+  const r = await api("/api/reread", {
+    mode: fresh ? "fresh" : "recover",
+    clear_reports: clearReports,
+  });
+  toast("خواندن از نو آغاز شد — پیام‌ها دوباره خوانده و گزارش از اول ساخته می‌شود", "ok");
+  refresh();
+});
+
 $("btnStop").onclick = guard(async () => {
   await api("/api/stop", {});
   toast("دستور توقف صادر شد", "ok");

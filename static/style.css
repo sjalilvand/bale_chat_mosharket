@@ -601,6 +601,30 @@ footer {
   background: linear-gradient(180deg, #fffafa, #fff);
 }
 
+/* خواندن از نو همه پیام‌ها (نسخه ۵.۳) */
+.reread-zone {
+  border: 1.5px solid #bfdbfe;
+  background: linear-gradient(180deg, #f8fbff, #fff);
+}
+
+.chip.blue {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.btn.primary {
+  background: linear-gradient(135deg, var(--primary), var(--primary-2));
+  color: #fff;
+}
+
+.btn.primary:hover { background: var(--primary-2); }
+
+.reread-help { margin-top: 10px; }
+
+.reread-help ul { margin: 6px 0 0; padding-right: 20px; }
+
+.reread-help li { margin: 4px 0; }
+
 .chip.warn {
   background: #fef3c7;
   color: #92400e;
