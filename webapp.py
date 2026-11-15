@@ -116,6 +116,14 @@ TYPE_LABELS = {
     "channel": "کانال",
 }
 
+# قوانین پیش‌فرض قدیم (نسخه‌های قبل از ۵) — برای تشخیص اینکه کاربر هرگز
+# قوانین سفارشی ذخیره نکرده و دسته‌ها باید با قوانین جدید به‌روز شوند
+OLD_DEFAULT_RULES = """اطلاعیه: اطلاعیه، اعلام، هماهنگ، توجه داشته باشید، مهم
+جلسه و قرار: جلسه، قرار، حضوری، آنلاین
+پرسش و پاسخ: ؟, ?, چرا، چطور، چگونه، سوال، سؤال، مشکل، راهنمایی
+سفارش و امور مالی: سفارش، خرید، قیمت، فاکتور، پرداخت، تخفیف، واریز
+تشکر و تعامل: ممنون، تشکر، مرسی، عالی، دست شما درد نکند"""
+
 # ---------- پیام‌های نمونه (نسخه ۵: کاملاً حذف شدند) ----------
 #
 # نسخه‌های قبل دکمه «افزودن پیام نمونه» داشتند که داده تستی به پایگاه داده
@@ -210,8 +218,18 @@ class AppState:
                 save_messages(self.messages, MESSAGES_PATH)
             except OSError:
                 pass
+        # اگر کاربر هرگز قوانین سفارشی ذخیره نکرده باشد (یا همان پیش‌فرض
+        # قدیمی در settings.json ذخیره شده باشد — حالت رایج نسخه‌های قبلی)،
+        # دسته‌های پیام‌های قبلی با قوانین جدید به‌روز می‌شوند
+        rules_customized = self.rules_saved and (
+            self.rules_text.strip() != OLD_DEFAULT_RULES.strip()
+        )
         changed = 0
-        if not self.rules_saved:
+        if not rules_customized:
+            # قوانین جدید فعال و دسته‌بندی دوباره انجام می‌شود
+            self.rules_text = DEFAULT_RULES
+            self.rules_saved = True
+            self.categorizer = Categorizer(parse_rules(DEFAULT_RULES))
             for m in self.messages:
                 new_cat = categorize_message(self.categorizer, m)
                 if new_cat != m.get("category"):
@@ -222,6 +240,8 @@ class AppState:
                     save_messages(self.messages, MESSAGES_PATH)
                 except OSError:
                     pass
+                # تنظیمات کمی بعد (هنگام شروع دریافت/اتصال) ذخیره می‌شود —
+                # در زمان __init__ هنوز _save_settings در دسترس نیست
         if removed:
             self.add_log(
                 f"{len(removed)} پیام نمونه/تستی قدیمی از پایگاه داده حذف شد — "
