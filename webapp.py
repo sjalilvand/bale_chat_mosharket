@@ -4,6 +4,24 @@
 داشبورد گرافیکی مدرن در مرورگر برای دریافت، دسته‌بندی و ساخت گزارش HTML
 از پیام‌های گروه‌های پیام‌رسان بله، همراه با نمایش زنده روند پیشرفت.
 
+امکانات نسخه ۵.۱ — «استودیوی گزارش عملکرد حوزه» (صفحه جدید /studio):
+    - صفحه کاملاً جدید جدا از داشبورد: انتخاب پیام، چیدمان، مشخصات گزارش و خروجی
+      HTML و پاورپوینت همه در یک صفحه
+    - فقط پیام‌های واقعی ذخیره‌شده (پیام‌های نمونه کلاً حذف شده‌اند و اگر در
+      پایگاه داده کاربر باقی مانده باشند هنگام اجرا خودکار پاک می‌شوند)
+    - انتخاب چند پیام با فیلتر موضوع/تاریخ شمسی/گفتگو/جست‌وجو/عکس‌دار
+    - چیدمان دلخواه: کشیدن و رها کردن، دکمه‌های ↑↓، حذف از چیدمان، مرتب‌سازی
+      خودکار (جدیدترین/قدیمی‌ترین/تفکیک موضوع/تفکیک فرستنده/معکوس) و
+      «حذف از پایگاه داده»
+    - مشخصات «گزارش عملکرد حوزه»: موضوع گزارش (با پیشنهاد از موضوعات واقعی
+      داده‌ها)، عنوان، تهیه‌کننده، مقدمه — همه در خروجی قابل ویرایش
+    - قالب خروجی: ۴ تم رنگی پاورپوینت، فرمت ۱۶:۹ یا ۴:۳، گروه‌بندی اسلایدها،
+      شامل عکس‌ها؛ و گروه‌بندی اولیه داخل گزارش HTML (ترتیب انتخابی یا تفکیک)
+    - «ساخت و مشاهده گزارش HTML» و «دانلود مستقیم پاورپوینت» — هر بار یک فایل
+      جدید با نام studio_report_تاریخ_ساعت در فهرست خروجی‌های داشبورد ثبت می‌شود
+    - تنظیمات استودیو در مرورگر ذخیره می‌شود (موضوع، عنوان، تم و ...)
+    - اندپوینت‌های جدید: GET /api/studio/messages و POST /api/studio/build
+
 امکانات نسخه ۵:
     - حذف کامل پیام‌های نمونه/تستی: دکمه و اندپوینت «پیام نمونه» کلاً برداشته
       شد و پیام‌های نمونه قدیمیِ باقی‌مانده در پایگاه داده، هنگام اجرا خودکار
@@ -61,6 +79,7 @@
     python main.py        →  http://127.0.0.1:5000 (یا اولین پورت آزاد)
 """
 
+import hashlib
 import json
 import os
 import tempfile
@@ -524,6 +543,16 @@ app = Flask(__name__)
 @app.route("/")
 def index():
     return render_template("index.html")
+
+
+@app.route("/studio")
+def studio():
+    """استودیوی گزارش عملکرد حوزه — صفحه جدید نسخه ۵.۱
+
+    انتخاب پیام، چیدمان دلخواه (کشیدن و رها کردن)، موضوع گزارش،
+    خروجی HTML ویرایش‌پذیر و خروجی پاورپوینت با تم و فرمت دلخواه.
+    """
+    return render_template("studio.html")
 
 
 @app.route("/output/<path:name>")
@@ -1571,6 +1600,191 @@ def api_messages_category():
     return jsonify(ok=True, changed=changed)
 
 
+# ---------------- استودیوی گزارش (نسخه ۵.۱) ----------------
+
+
+def _studio_msg_key(m):
+    """کلید یکتای قطعی پیام برای استودیو — حتی برای پیام‌های بدون message_id
+
+    (مثلاً پیام‌های وارد‌شده از فایل پشتیبان) — از هش محتوایی استفاده می‌شود
+    تا کلید بین درخواست‌ها و اجراها پایدار بماند.
+    """
+    mid = m.get("message_id")
+    if mid is not None:
+        return f"{m.get('chat_id')}:{mid}"
+    digest = hashlib.md5(
+        (
+            f"{m.get('chat_id')}|{m.get('date')}|{m.get('date_text')}|"
+            f"{m.get('hour_text')}|{m.get('text')}|{m.get('sender_name')}"
+        ).encode("utf-8")
+    ).hexdigest()[:10]
+    return f"{m.get('chat_id')}:x{digest}"
+
+
+@app.route("/api/studio/messages")
+def api_studio_messages():
+    """همه پیام‌های واقعی ذخیره‌شده برای صفحه استودیو (بدون هیچ داده نمونه)"""
+    with S.lock:
+        msgs = list(S.messages)
+    out = []
+    for m in msgs:
+        text = str(m.get("text") or "")
+        caption = str(m.get("caption") or "")
+        media = m.get("media") or []
+        has_photo = any(x.get("type") in ("photo", "sticker") for x in media)
+        out.append({
+            "key": _studio_msg_key(m),
+            "sender": m.get("sender_name") or m.get("username") or "ناشناس",
+            "date": m.get("date") or 0,
+            "date_text": m.get("date_text") or "",
+            "hour_text": m.get("hour_text") or "",
+            "category": m.get("category") or FALLBACK,
+            "chat_title": m.get("chat_title") or "",
+            "text": text,
+            "caption": caption,
+            "has_photo": has_photo,
+            "media_count": len(media),
+            "is_reply": bool(m.get("reply_to")),
+            "search": (text + " " + caption + " " + str(m.get("sender_name") or "")
+                       + " " + str(m.get("chat_title") or "")
+                       + " " + str(m.get("category") or "")).lower(),
+        })
+    out.sort(key=lambda x: x.get("date") or 0, reverse=True)
+    return jsonify(ok=True, count=len(out), messages=out)
+
+
+def _make_studio_export(payload):
+    """ساخت خروجی استودیو: گزارش عملکرد حوزه با موضوع/چیدمان/تم انتخابی کاربر
+
+    ورودی payload (JSON):
+        keys       — ["chat_id:message_id", ...] به ترتیب دلخواه کاربر
+        topic      — موضوع گزارش
+        title      — عنوان گزارش (اختیاری؛ پیش‌فرض از حوزه/گروه)
+        author     — تهیه‌کننده
+        group      — نام حوزه/گروه (اختیاری؛ پیش‌فرض خودکار)
+        intro      — مقدمه گزارش
+        theme/fmt/pptx_group/images — پیش‌تنظیم پاورپوینت
+        html_group — گروه‌بندی اولیه داخل گزارش HTML
+    خروجی: (entry یا None، پیام خطا)
+    """
+    keys = payload.get("keys") or []
+    if isinstance(keys, str):
+        keys = [x for x in keys.split(",") if x.strip()]
+    keys = [str(k or "").strip() for k in keys if str(k or "").strip()][:3000]
+
+    with S.lock:
+        msgs = list(S.messages)
+
+    if not msgs:
+        return None, "پیامی ذخیره نشده است — اول از داشبورد پیام‌ها را دریافت کنید"
+    if not keys:
+        return None, "هیچ پیامی انتخاب نشده است — در استودیو پیام‌ها را انتخاب کنید"
+
+    # نگاشت کلید «chat_id:message_id» به پیام‌های واقعی
+    want = {}
+    for k in keys:
+        cid, _, mid = str(k).rpartition(":")
+        want.setdefault((cid, mid), True)
+    selected = []
+    for m in msgs:
+        cid, _, mid = _studio_msg_key(m).rpartition(":")
+        if (cid, mid) in want:
+            selected.append(m)
+
+    if not selected:
+        return None, "پیام‌های انتخابی در پایگاه داده پیدا نشدند (شاید حذف شده باشند) — صفحه استودیو را دوباره باز کنید"
+
+    # ترتیب انتخابی کاربر روی پیام‌های انتخاب‌شده اعمال می‌شود
+    pos = {k: i for i, k in enumerate(keys)}
+    selected.sort(key=lambda m: pos.get(_studio_msg_key(m), 10**9))
+
+    topic = str(payload.get("topic") or "").strip()[:150]
+    title_input = str(payload.get("title") or "").strip()[:150]
+    author = str(payload.get("author") or "").strip()[:120]
+    group_in = str(payload.get("group") or "").strip()[:150]
+    intro = str(payload.get("intro") or "").strip()[:4000]
+    theme = str(payload.get("theme") or "green").strip()
+    fmt = str(payload.get("fmt") or "16:9").strip()
+    pptx_group = str(payload.get("pptx_group") or "cat").strip()
+    images = bool(payload.get("images", True))
+
+    # عنوان و حوزه: اگر کاربر نام حوزه نوشته باشد همان گزارش عنوان می‌شود
+    if not title_input:
+        if topic:
+            title_input = f"گزارش عملکرد حوزه {topic}"
+        else:
+            titles = [m.get("chat_title") for m in selected if m.get("chat_title")]
+            title_input = (
+                Counter(titles).most_common(1)[0][0] if titles else "گزارش عملکرد حوزه"
+            )
+    if not group_in:
+        gtitles = [m.get("chat_title") for m in selected if m.get("chat_title")]
+        group_in = (
+            Counter(gtitles).most_common(1)[0][0] if gtitles else title_input
+        )
+
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    name = time.strftime("studio_report_%Y%m%d_%H%M%S") + ".html"
+    path = os.path.join(OUTPUT_DIR, name)
+    try:
+        build_report(
+            selected,
+            path,
+            group_title=title_input,
+            media_base=MEDIA_DIR,
+            topic=topic,
+            intro=intro,
+            author=author,
+            pptx_theme=theme,
+            pptx_fmt=fmt,
+            pptx_group=pptx_group,
+            pptx_images=images,
+            manual_keys=keys,
+            hero_title=title_input,
+            group_label=group_in,
+            html_group=str(payload.get("html_group") or "").strip(),
+        )
+    except OSError as exc:
+        return None, f"ساخت فایل ناموفق بود: {exc}"
+
+    entry = {
+        "name": name,
+        "url": f"/output/{name}",
+        "count": len(selected),
+        "when": now_str(),
+        "time": int(time.time()),
+        "size": os.path.getsize(path),
+        "title": title_input,
+        "studio": True,
+    }
+    with S.lock:
+        S.exports.insert(0, entry)
+        S.exports = S.exports[:60]
+        S._save_exports()
+    S.add_log(
+        f"خروجی استودیو ساخته شد: {name} ({len(selected)} پیام انتخابی"
+        + (f" — موضوع: {topic}" if topic else "") + ")",
+        "ok",
+    )
+    return entry, ""
+
+
+@app.route("/api/studio/build", methods=["POST"])
+def api_studio_build():
+    """ساخت گزارش عملکرد حوزه از استودیو — هر بار یک فایل جدید زمان‌دار"""
+    payload = request.get_json(silent=True) or {}
+    entry, err = _make_studio_export(payload)
+    if entry is None:
+        return jsonify(ok=False, error=err), 400
+    return jsonify(
+        ok=True,
+        url=entry["url"],
+        name=entry["name"],
+        count=entry["count"],
+        path=os.path.join(OUTPUT_DIR, entry["name"]),
+    )
+
+
 # ---------------- گزارش ----------------
 
 
@@ -1644,7 +1858,9 @@ def api_exports_delete():
         or "/" in name
         or "\\" in name
         or ".." in name
-        or not name.startswith("report_")
+        or not (
+            name.startswith("report_") or name.startswith("studio_report_")
+        )
         or not name.endswith(".html")
     ):
         return jsonify(ok=False, error="نام فایل معتبر نیست"), 400

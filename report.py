@@ -64,6 +64,10 @@ border-radius:16px;padding:26px 30px;margin-bottom:18px}
 .hero p{margin:2px 0;opacity:.92;font-size:13px}
 .subject-line{font-size:14px;margin-top:6px}
 .subject-box{border-bottom:1px dashed rgba(255,255,255,.55);padding:0 6px;font-weight:bold}
+.intro-line{font-size:13.5px;line-height:2;margin-top:10px;background:rgba(255,255,255,.09);
+border-right:3px solid rgba(255,255,255,.55);border-radius:8px;padding:8px 12px;
+white-space:pre-wrap}
+.author-line{font-size:13px;margin-top:8px}
 .edit-hint{display:none;background:#fef9c3;color:#854d0e;font-size:12.5px;
 border-radius:10px;padding:8px 14px;margin-bottom:12px;line-height:1.9}
 body.edit-mode .edit-hint{display:block}
@@ -237,14 +241,18 @@ body{background:#fff;padding:0}
 section.cat{page-break-inside:avoid}}
 </style>
 </head>
-<body data-group="$group_attr" data-range="$range" data-generated="$generated">
+<body data-group="$group_attr" data-range="$range" data-generated="$generated"
+      data-pptx-theme="$p_theme" data-pptx-fmt="$p_fmt" data-pptx-group="$p_group"
+      data-pptx-images="$p_images" data-init-sort="$init_sort" data-init-group="$init_group">
 <div class="wrap">
   <div class="hero">
-    <div class="edit-hint" id="editHint">حالت ویرایش فعال است — روی عنوان، «موضوع گزارش» و متن پیام‌ها کلیک کنید و تغییر دهید؛ دستهٔ هر پیام را هم از فهرست کنار نام آن عوض کنید. برای ماندگاری تغییرها و حذف‌ها، «ذخیره نسخه ویرایش‌شده» را بزنید.</div>
-    <h1 id="reportTitle">گزارش عملکرد — $title</h1>
+    <div class="edit-hint" id="editHint">حالت ویرایش فعال است — روی عنوان، «موضوع گزارش»، «مقدمه گزارش» و متن پیام‌ها کلیک کنید و تغییر دهید؛ دستهٔ هر پیام را هم از فهرست کنار نام آن عوض کنید. برای ماندگاری تغییرها و حذف‌ها، «ذخیره نسخه ویرایش‌شده» را بزنید.</div>
+    <h1 id="reportTitle">$h1</h1>
     <p class="subject-line">موضوع گزارش: <span class="subject-box" id="reportSubject">$subject</span></p>
+    $intro_html
+    $author_html
     <p>تاریخ تولید گزارش: $generated</p>
-    <p>گروه: $title &nbsp;|&nbsp; تعداد پیام‌ها: $total &nbsp;|&nbsp; بازه زمانی: $range</p>
+    <p>حوزه/گروه: $group_line &nbsp;|&nbsp; تعداد پیام‌ها: $total &nbsp;|&nbsp; بازه زمانی: $range</p>
   </div>
   <div class="stats">
     <div class="stat"><b>$total</b><span>کل پیام‌ها</span></div>
@@ -294,12 +302,14 @@ section.cat{page-break-inside:avoid}}
         <option value="cat">دسته موضوعی</option>
         <option value="date">تاریخ ارسال</option>
         <option value="sender">فرستنده</option>
+        <option value="none">بدون گروه‌بندی (ترتیب انتخابی)</option>
       </select>
       <span class="tb-label">مرتب‌سازی:</span>
       <select id="sortSel">
         <option value="ts">زمان ارسال</option>
         <option value="sender">فرستنده</option>
         <option value="cat">موضوع</option>
+        $manual_option
       </select>
       <button type="button" class="tb-btn" id="btnSortDir">صعودی ↑</button>
       <span class="tb-sep"></span>
@@ -359,6 +369,7 @@ section.cat{page-break-inside:avoid}}
       <select id="pptxGroup">
         <option value="cat">بر اساس موضوع</option>
         <option value="date">بر اساس تاریخ ارسال</option>
+        <option value="none">بدون گروه‌بندی (ترتیب انتخابی)</option>
       </select>
     </div>
     <div class="m-row">
@@ -510,6 +521,15 @@ function filtered(){
 function sorted(list){
   var dir = state.sortDir === "asc" ? 1 : -1;
   var key = sortSel.value;
+  if (key === "manual"){
+    /* ترتیب انتخابی — دقیقاً همان چیدمانی که در استودیوی گزارش درست شده */
+    return list.slice().sort(function(a,b){
+      var oa = +(a.getAttribute("data-ord") || 9999999);
+      var ob = +(b.getAttribute("data-ord") || 9999999);
+      if (oa !== ob) return oa - ob;
+      return (+a.getAttribute("data-ts") || 0) - (+b.getAttribute("data-ts") || 0);
+    });
+  }
   return list.slice().sort(function(a,b){
     if (key === "sender"){
       var x = a.getAttribute("data-sender") || "";
@@ -581,8 +601,17 @@ function render(){
   content.innerHTML = "";
   var list = sorted(filtered());
   var by = groupSel.value;
-  var g = grouped(list, by);
   var shown = 0;
+  if (by === "none"){
+    /* بدون گروه‌بندی — نمایش تخت دقیقاً با ترتیب انتخابی */
+    for (var f = 0; f < list.length; f++) content.appendChild(list[f]);
+    shown = list.length;
+    visEl.textContent = "نمایش " + faNum(shown) + " پیام از " + faNum(cards.length) + " پیام (بدون گروه‌بندی)";
+    noResult.classList.toggle("hidden", shown > 0);
+    updateSelBar();
+    return;
+  }
+  var g = grouped(list, by);
   for (var k = 0; k < g.keys.length; k++){
     var key = g.keys[k], arr = g.map[key];
     var color = (by === "cat") ? (catColors[key] || "#64748b")
@@ -717,8 +746,13 @@ function setEditMode(on){
   }
   var t = document.getElementById("reportTitle");
   var s = document.getElementById("reportSubject");
-  t.contentEditable = on ? "true" : "false";
-  s.contentEditable = on ? "true" : "false";
+  var intro = document.getElementById("reportIntro");
+  var author = document.getElementById("reportAuthor");
+  var heads = [].slice.call(document.querySelectorAll("section.cat h2"));
+  var eds = [t, s, intro, author].concat(heads);
+  for (var j = 0; j < eds.length; j++){
+    if (eds[j]) eds[j].contentEditable = on ? "true" : "false";
+  }
   var btn = document.getElementById("btnEditMode");
   btn.classList.toggle("active", on);
   btn.textContent = on ? "پایان حالت ویرایش" : "حالت ویرایش";
@@ -908,6 +942,10 @@ function collectModel(list){
 }
 
 function groupModel(list, by){
+  if (by === "none"){
+    /* بدون گروه‌بندی — همه اسلایدها با ترتیب انتخابی */
+    return { keys: ["__none__"], map: { "__none__": list } };
+  }
   var map = {}, order = [];
   for (var i = 0; i < list.length; i++){
     var m = list[i];
@@ -1072,8 +1110,9 @@ function buildPptx(model, statusEl){
   /* ---------- اسلایدهای پیام‌ها ---------- */
   var groups = groupModel(model, groupBy);
   for (var gk = 0; gk < groups.keys.length; gk++){
-    var gname = groups.keys[gk];
-    var garr = groups.map[gname];
+    var gkey = groups.keys[gk];
+    var gname = (gkey === "__none__") ? (subject || "پیام‌ها") : gkey;
+    var garr = groups.map[gkey];
     var perSlide = 4;
     var pages = Math.ceil(garr.length / perSlide);
     for (var p = 0; p < pages; p++){
@@ -1187,6 +1226,45 @@ function buildPptx(model, statusEl){
   }
   state.selected = {};
   setEditMode(false);
+
+  /* ---------- پیش‌تنظیم‌های استودیوی گزارش (نسخه ۵.۱) ---------- */
+  function bAttr(name, dflt){
+    var v = document.body.getAttribute(name);
+    return (v === null || v === "") ? dflt : v;
+  }
+  function setVal(id, v){
+    if (!v) return;
+    var el = document.getElementById(id);
+    if (el){
+      var opt = el.querySelector('option[value="' + v + '"]');
+      if (opt) el.value = v;
+    }
+  }
+  setVal("pptxTheme", bAttr("data-pptx-theme", ""));
+  setVal("pptxFmt", bAttr("data-pptx-fmt", ""));
+  setVal("pptxGroup", bAttr("data-pptx-group", ""));
+  var imgDef = bAttr("data-pptx-images", "");
+  if (imgDef){
+    var cb = document.getElementById("pptxImages");
+    if (cb) cb.checked = (imgDef === "1");
+  }
+  /* ترتیب انتخابی: اگر شناسه ترتیب دستی هست، مرتب‌سازی و گروه‌بندی اولیه */
+  var hasManual = pool.querySelector('.msg[data-ord]:not([data-ord=""])');
+  var initSort = bAttr("data-init-sort", hasManual ? "manual" : "ts");
+  var initGroup = bAttr("data-init-group", hasManual ? "none" : "cat");
+  setVal("sortSel", initSort);
+  setVal("groupBySel", initGroup);
+
+  /* ---------- ساخت خودکار پاورپوینت (دانلود مستقیم از استودیو) ---------- */
+  if (location.search.indexOf("autopptx=1") > -1){
+    setTimeout(function(){
+      pptxOverlay.classList.remove("hidden");
+      updateScopeHint();
+      var go = document.getElementById("btnPptxGo");
+      if (go) go.click();
+    }, 350);
+  }
+
   refreshChips();
   render();
 })();
@@ -1195,7 +1273,7 @@ function buildPptx(model, statusEl){
 
 # ---------------------------------------------------------------- قالب کارت
 
-CARD = Template("""<article class="msg" id="$anchor" data-cat="$attr_cat" data-sender="$attr_sender" data-chat="$attr_chat" data-photo="$attr_photo" data-ts="$attr_ts" data-date="$attr_date" data-when="$attr_when" data-mids="$attr_mids" data-txt="$attr_txt">
+CARD = Template("""<article class="msg" id="$anchor" data-cat="$attr_cat" data-sender="$attr_sender" data-chat="$attr_chat" data-photo="$attr_photo" data-ts="$attr_ts" data-date="$attr_date" data-when="$attr_when" data-mids="$attr_mids" data-ord="$attr_ord" data-txt="$attr_txt">
 <button class="hide-btn" type="button" title="حذف این پیام از گزارش">✕</button>
 <label class="pick" title="انتخاب برای عملیات گروهی"><input type="checkbox" class="pick-box"></label>
 <div class="meta"><b>$sender</b><span>$when</span>$cat_edit$chips</div>
@@ -1482,8 +1560,35 @@ def _bars_html(counter, ordered, color_of):
     return "\n".join(rows)
 
 
-def build_report(messages, output_path, group_title=None, media_base=None):
-    """ساخت فایل گزارش HTML تعاملی و برگرداندن مسیر مطلق آن"""
+def build_report(
+    messages,
+    output_path,
+    group_title=None,
+    media_base=None,
+    topic=None,
+    intro="",
+    author="",
+    pptx_theme="green",
+    pptx_fmt="16:9",
+    pptx_group="cat",
+    pptx_images=True,
+    manual_keys=None,
+    hero_title=None,
+    group_label=None,
+    html_group=None,
+):
+    """ساخت فایل گزارش HTML تعاملی و برگرداندن مسیر مطلق آن
+
+    پارامترهای استودیوی گزارش (نسخه ۵.۱):
+        topic       — «موضوع گزارش» انتخابی (گزارش عملکرد حوزه در خصوص ...)
+        intro       — مقدمه گزارش (قابل ویرایش در حالت ویرایش)
+        author      — نام تهیه‌کننده گزارش
+        pptx_*      — پیش‌تنظیم تم رنگی/فرمت/گروه‌بندی/عکس‌ها برای خروجی پاورپوینت
+        manual_keys — فهرست «chat_id:message_id» به ترتیب انتخابی کاربر
+                      (گزارش با مرتب‌سازی «ترتیب انتخابی» و بدون گروه‌بندی باز می‌شود)
+        hero_title  — عنوان کامل سربرگ گزارش (اگر داده شود، «گزارش عملکرد — » اضافه نمی‌شود)
+        group_label — برچسب حوزه/گروه در سربرگ و پاورپوینت (پیش‌فرض: همان عنوان)
+    """
     if media_base is None:
         media_base = os.path.dirname(os.path.abspath(output_path))
 
@@ -1514,7 +1619,17 @@ def build_report(messages, output_path, group_title=None, media_base=None):
         titles = [m.get("chat_title") for m in msgs if m.get("chat_title")]
         title = Counter(titles).most_common(1)[0][0] if titles else "بدون عنوان"
 
-    subject = "عملکرد " + title.split("(")[0].strip()
+    # موضوع گزارش — اگر کاربر در استودیو موضوعی انتخاب کرده باشد
+    topic_clean = str(topic or "").strip()
+    subject = topic_clean if topic_clean else "عملکرد " + title.split("(")[0].strip()
+
+    # ترتیب انتخابی — نقشه کلید به جایگاه از فهرست مرتب ارسالی استودیو
+    ord_of = {}
+    if manual_keys:
+        for idx, k in enumerate(manual_keys):
+            ks = str(k or "")
+            if ks and ks not in ord_of:
+                ord_of[ks] = idx
 
     participants = set()
     photos_total = 0
@@ -1609,6 +1724,19 @@ def build_report(messages, output_path, group_title=None, media_base=None):
         mids = ",".join(
             f"{card['chat_id']}:{mid}" for mid in card["ids"] if mid is not None
         )
+
+        # جایگاه کارت در ترتیب انتخابی استودیو (اگر فهرست ترتیب داده شده باشد)
+        card_ord = ""
+        if ord_of:
+            best = None
+            for mid in card["ids"]:
+                if mid is None:
+                    continue
+                k = f"{card['chat_id']}:{mid}"  # همان قالب کلید استودیو
+                if k in ord_of and (best is None or ord_of[k] < best):
+                    best = ord_of[k]
+            card_ord = str(best) if best is not None else str(500000 + int(m.get("date") or 0))
+
         pool_parts.append(
             CARD.substitute(
                 anchor=_attr(anchor),
@@ -1624,6 +1752,7 @@ def build_report(messages, output_path, group_title=None, media_base=None):
                 attr_date=_attr(_date_str(m)),
                 attr_when=_attr(_when(m)),
                 attr_mids=_attr(mids),
+                attr_ord=_attr(card_ord),
                 attr_txt=_attr(search_text[:4000]),
                 sender=_attr(
                     m.get("sender_name") or m.get("username") or "ناشناس"
@@ -1682,10 +1811,46 @@ def build_report(messages, output_path, group_title=None, media_base=None):
 
     topcat = counter.most_common(1)[0][0] if counter else "—"
 
+    # ---------- مقدمه و تهیه‌کننده (استودیوی گزارش) ----------
+    intro_clean = str(intro or "").strip()
+    intro_html = (
+        f'<p class="intro-line" id="reportIntro">{_attr(intro_clean)}</p>'
+        if intro_clean
+        else ""
+    )
+    author_clean = str(author or "").strip()
+    author_html = (
+        '<p class="author-line">تهیه‌کننده گزارش: '
+        f'<span class="subject-box" id="reportAuthor">{_attr(author_clean)}</span></p>'
+        if author_clean
+        else ""
+    )
+
+    # اعتبار پیش‌تنظیم‌های پاورپوینت
+    theme_key = pptx_theme if pptx_theme in ("green", "blue", "navy", "mono") else "green"
+    fmt_key = "4:3" if str(pptx_fmt) == "4:3" else "16:9"
+    group_key = pptx_group if pptx_group in ("cat", "date", "none") else "cat"
+    has_manual = bool(ord_of)
+
+    # گروه‌بندی اولیه داخل گزارش: پیش‌فرض «ترتیب انتخابی» برای خروجی استودیو،
+    # مگر اینکه کاربر در استودیو تفکیک موضوع/تاریخ/فرستنده را انتخاب کرده باشد
+    hg = str(html_group or "").strip()
+    init_sort_key = "manual" if has_manual else "ts"
+    init_group_key = "none" if has_manual else "cat"
+    if hg in ("cat", "date", "sender", "none"):
+        init_group_key = hg
+
+    # عنوان سربرگ: اگر عنوان کامل از استودیو آمده، بدون پیشوند «گزارش عملکرد — »
+    hero_clean = str(hero_title or "").strip()
+    h1 = hero_clean if hero_clean else f"گزارش عملکرد — {title}"
+    group_clean = str(group_label or "").strip() or title
+
     out = PAGE.substitute(
         title=_attr(title),
+        h1=_attr(h1),
         subject=_attr(subject),
-        group_attr=_attr(title),
+        group_attr=_attr(group_clean),
+        group_line=_attr(group_clean),
         generated=now_str(),
         total=len(msgs),
         participants=len(participants),
@@ -1706,6 +1871,19 @@ def build_report(messages, output_path, group_title=None, media_base=None):
         pool=pool_html,
         range=_attr(rng),
         version=VERSION,
+        intro_html=intro_html,
+        author_html=author_html,
+        p_theme=theme_key,
+        p_fmt=fmt_key,
+        p_group=group_key,
+        p_images="1" if pptx_images else "0",
+        init_sort=init_sort_key,
+        init_group=init_group_key,
+        manual_option=(
+            '<option value="manual">ترتیب انتخابی (استودیو)</option>'
+            if has_manual
+            else ""
+        ),
     )
     out = out.replace("<!--MAIN_JS-->", MAIN_JS)
     out = out.replace("/*__PPTX_LIB__*/", _load_pptx_lib())

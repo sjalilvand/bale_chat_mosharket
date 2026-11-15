@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>استودیوی گزارش عملکرد حوزه — Bale Chat Mosharket</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='studio.css') }}">
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-inner">
+    <div class="brand">
+      <div class="logo">س</div>
+      <div>
+        <h1>استودیوی گزارش عملکرد حوزه <span class="chip ver" id="verChip">نسخه —</span></h1>
+        <p>انتخاب پیام، چیدمان دلخواه، موضوع گزارش، خروجی HTML ویرایش‌پذیر و پاورپوینت با تم دلخواه</p>
+      </div>
+    </div>
+    <div class="hero-actions">
+      <a class="btn ghost-light" href="/">بازگشت به داشبورد</a>
+      <span class="count-chip"><b id="totalChip">۰</b> پیام واقعی ذخیره‌شده</span>
+    </div>
+  </div>
+</header>
+
+<!-- حالت خالی -->
+<div class="empty-state hidden" id="emptyState">
+  <b>هنوز هیچ پیامی ذخیره نشده است.</b>
+  <p>پیام‌های نمونه کلاً حذف شده‌اند — استودیو فقط با <b>پیام‌های واقعی دریافتی از بات</b> کار می‌کند.</p>
+  <p>از داشبورد دکمه «همگام‌سازی همه پیام‌های بات» را بزنید یا پیام‌های قدیمی را به چت ربات فوروارد کنید؛ سپس به این صفحه برگردید.</p>
+  <a class="btn" href="/">رفتن به داشبورد</a>
+</div>
+
+<main class="wrap" id="mainWrap">
+
+  <!-- گام ۱: انتخاب پیام‌ها -->
+  <section class="card">
+    <div class="card-head">
+      <h2>۱) انتخاب پیام‌ها — فقط پیام‌های واقعی ذخیره‌شده</h2>
+      <span class="chip" id="pickCountChip">۰ انتخاب شده</span>
+    </div>
+    <div class="filters">
+      <input type="search" id="q" placeholder="جست‌وجو در متن پیام، فرستنده، کپشن ...">
+      <select id="catSel"><option value="">همه موضوعات</option></select>
+      <select id="dateSel"><option value="">همه تاریخ‌ها (شمسی)</option></select>
+      <select id="chatSel"><option value="">همه گفتگوها</option></select>
+      <label class="check"><input type="checkbox" id="photoOnly"> فقط عکس‌دار</label>
+    </div>
+    <div class="list-head">
+      <span id="visInfo">—</span>
+      <span class="row-btns">
+        <button type="button" class="btn small ghost" id="btnPickShown">انتخاب همه نمایش‌داده‌شده‌ها</button>
+        <button type="button" class="btn small ghost" id="btnPickNone">لغو انتخاب این صفحه</button>
+      </span>
+    </div>
+    <div class="msg-list" id="msgList"></div>
+    <div class="more-row">
+      <button type="button" class="btn small ghost hidden" id="btnMore">نمایش پیام‌های بیشتر</button>
+    </div>
+  </section>
+
+  <!-- گام ۲: چیدمان -->
+  <section class="card">
+    <div class="card-head">
+      <h2>۲) چیدمان پیام‌های انتخاب‌شده (ترتیب دلخواه)</h2>
+      <span class="chip" id="orderChip">۰ پیام در چیدمان</span>
+    </div>
+    <p class="hint">پیام‌های انتخاب‌شده با کلیک روی هر ردیف به این فهرست می‌آیند. با <b>کشیدن و رها کردن</b> یا دکمه‌های ↑↓ ترتیب را به تفکیک دلخواه خودتان مرتب کنید. دکمه ✕ پیام را از چیدمان برمی‌دارد و «حذف از پایگاه داده» آن را از همه گزارش‌ها حذف می‌کند.</p>
+    <div class="row wrap">
+      <span class="lbl-inline">مرتب‌سازی خودکار:</span>
+      <button type="button" class="btn small ghost" id="autoNewest">جدیدترین اول</button>
+      <button type="button" class="btn small ghost" id="autoOldest">قدیمی‌ترین اول</button>
+      <button type="button" class="btn small ghost" id="autoCat">تفکیک بر اساس موضوع</button>
+      <button type="button" class="btn small ghost" id="autoSender">تفکیک بر اساس فرستنده</button>
+      <button type="button" class="btn small ghost" id="autoReverse">معکوس کردن ترتیب</button>
+      <span class="sep"></span>
+      <button type="button" class="btn small danger" id="btnDeleteFromDb">حذف از پایگاه داده</button>
+      <button type="button" class="btn small ghost" id="btnClearOrder">خالی کردن چیدمان</button>
+    </div>
+    <div class="order-list" id="orderList">
+      <div class="empty-row">هنوز پیامی انتخاب نشده — از بخش بالا پیام‌ها را انتخاب کنید</div>
+    </div>
+  </section>
+
+  <!-- گام ۳: مشخصات گزارش -->
+  <section class="card">
+    <div class="card-head"><h2>۳) مشخصات «گزارش عملکرد حوزه»</h2></div>
+    <div class="grid-2">
+      <div>
+        <label class="lbl" for="topicInput">موضوع گزارش (حوزه مورد گزارش)</label>
+        <input type="text" id="topicInput" list="topicList" placeholder="مثال: جلسات هماهنگی محله، جشن محله، کمک‌های مردمی">
+        <datalist id="topicList"></datalist>
+        <p class="hint">پیشنهادها از موضوعات واقعی موجود در پیام‌ها ساخته می‌شود؛ هر متن دلخواه هم می‌توانید بنویسید.</p>
+      </div>
+      <div>
+        <label class="lbl" for="titleInput">عنوان گزارش</label>
+        <input type="text" id="titleInput" placeholder="گزارش عملکرد حوزه مشارکت‌های مردمی">
+      </div>
+      <div>
+        <label class="lbl" for="authorInput">تهیه‌کننده / معاونت گزارش‌دهنده</label>
+        <input type="text" id="authorInput" placeholder="مثال: معاونت مشارکت‌های مردمی">
+      </div>
+      <div>
+        <label class="lbl" for="groupLabel">حوزه / گروه داده</label>
+        <input type="text" id="groupLabel" placeholder="نام حوزه یا گروه (خالی = خودکار)">
+      </div>
+      <div class="span-2">
+        <label class="lbl" for="introInput">مقدمه گزارش (در خروجی قابل ویرایش است)</label>
+        <textarea id="introInput" rows="4" placeholder="در این گزارش عملکرد حوزه در خصوص موضوع انتخابی طی بازه زمانی ... ارائه شده است."></textarea>
+      </div>
+    </div>
+  </section>
+
+  <!-- گام ۴: قالب خروجی -->
+  <section class="card">
+    <div class="card-head"><h2>۴) قالب خروجی پاورپوینت و گزارش</h2></div>
+    <div class="opts">
+      <div class="opt-block">
+        <span class="lbl">تم رنگی</span>
+        <div class="themes" id="themePick">
+          <button type="button" class="theme active" data-theme="green">
+            <span class="swatch" style="background:linear-gradient(135deg,#0e9f6e,#0b7a55)"></span>سبز رسمی
+          </button>
+          <button type="button" class="theme" data-theme="blue">
+            <span class="swatch" style="background:linear-gradient(135deg,#2563eb,#1e3a8a)"></span>آبی سازمانی
+          </button>
+          <button type="button" class="theme" data-theme="navy">
+            <span class="swatch" style="background:linear-gradient(135deg,#0f172a,#0ea5e9)"></span>سرمه‌ای شب
+          </button>
+          <button type="button" class="theme" data-theme="mono">
+            <span class="swatch" style="background:linear-gradient(135deg,#475569,#334155)"></span>ساده خاکستری
+          </button>
+        </div>
+      </div>
+      <div class="opt-block">
+        <span class="lbl">فرمت اسلاید</span>
+        <div class="fmts" id="fmtPick">
+          <button type="button" class="fmt active" data-fmt="16:9">عریض ۱۶:۹</button>
+          <button type="button" class="fmt" data-fmt="4:3">کلاسیک ۴:۳</button>
+        </div>
+        <span class="lbl" style="margin-top:12px">گروه‌بندی اسلایدها</span>
+        <select id="pptxGroupSel">
+          <option value="cat">بر اساس موضوع</option>
+          <option value="date">بر اساس تاریخ ارسال</option>
+          <option value="none">بدون گروه‌بندی (ترتیب انتخابی)</option>
+        </select>
+        <label class="check" style="margin-top:10px"><input type="checkbox" id="inclPhotos" checked> شامل عکس‌ها در اسلایدها و گزارش</label>
+      </div>
+      <div class="opt-block">
+        <span class="lbl">گروه‌بندی و مرتب‌سازی داخل گزارش HTML</span>
+        <select id="htmlGroupSel">
+          <option value="none">بدون گروه‌بندی (ترتیب انتخابی من)</option>
+          <option value="cat">تفکیک بر اساس موضوع</option>
+          <option value="date">تفکیک بر اساس تاریخ ارسال</option>
+          <option value="sender">تفکیک بر اساس فرستنده</option>
+        </select>
+        <p class="hint">اگر پیام‌ها را دستی مرتب کرده‌اید، پیشنهاد می‌شود «ترتیب انتخابی من» بماند؛ داخل گزارش خود گزارش هم می‌توانید هر لحظه عوض کنید.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- گام ۵: خروجی -->
+  <section class="card actions-card">
+    <div class="card-head"><h2>۵) گرفتن خروجی</h2></div>
+    <p class="hint">هر بار خروجی بگیرید یک <b>فایل جدید</b> با تاریخ و ساعت ساخته می‌شود و در فهرست خروجی‌های داشبورد هم ثبت می‌شود. فایل HTML با حالت ویرایش کامل باز می‌شود (متن، عنوان، موضوع، مقدمه و دسته هر پیام) و دکمه «خروجی پاورپوینت» داخل خود گزارش هم با همین تم و فرمت تنظیم شده است.</p>
+    <div class="row wrap big-actions">
+      <button type="button" class="btn big primary" id="btnBuildHtml">ساخت و مشاهده گزارش HTML (ویرایش‌پذیر)</button>
+      <button type="button" class="btn big pptx" id="btnBuildPptx">دانلود مستقیم پاورپوینت (با تم و فرمت بالا)</button>
+    </div>
+    <p class="status" id="statusLine"></p>
+    <div class="exports" id="studioExports"></div>
+  </section>
+
+</main>
+
+<footer>استودیوی گزارش — ساخته‌شده برای معاونت مشارکت‌های مردمی — <span id="verFooter"></span></footer>
+
+<div class="toast hidden" id="toast"></div>
+
+<script src="{{ url_for('static', filename='studio.js') }}"></script>
+</body>
+</html>

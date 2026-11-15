@@ -10,5 +10,5 @@
 """
 
 APP_NAME = "Bale Chat Mosharket"
-VERSION = "5.0"
+VERSION = "5.1"
 VERSION_LABEL = f"نسخه {VERSION}"
