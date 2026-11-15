@@ -357,12 +357,6 @@ $("btnReset").onclick = guard(async () => {
   refresh();
 });
 
-$("btnDemo").onclick = guard(async () => {
-  const r = await api("/api/demo", { count: 10 });
-  toast(`${fa(r.added)} پیام نمونه اضافه شد`, "ok");
-  refresh();
-});
-
 $("btnImport").onclick = () => $("importFile").click();
 
 $("btnRecover").onclick = guard(async () => {

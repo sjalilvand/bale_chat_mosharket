@@ -1,8 +1,25 @@
 # -*- coding: utf-8 -*-
-"""Bale Chat Mosharket — نسخه وب ۴ (Flask)
+"""Bale Chat Mosharket — نسخه وب ۵ (Flask)
 
 داشبورد گرافیکی مدرن در مرورگر برای دریافت، دسته‌بندی و ساخت گزارش HTML
 از پیام‌های گروه‌های پیام‌رسان بله، همراه با نمایش زنده روند پیشرفت.
+
+امکانات نسخه ۵:
+    - حذف کامل پیام‌های نمونه/تستی: دکمه و اندپوینت «پیام نمونه» کلاً برداشته
+      شد و پیام‌های نمونه قدیمیِ باقی‌مانده در پایگاه داده، هنگام اجرا خودکار
+      پیدا و حذف می‌شوند
+    - دسته‌بندی بر اساس داده‌های موجود: دسته‌های جدید حوزه مشارکت (اطلاعیه و
+      ابلاغیه، جلسه و قرار، گزارش عملکرد، هماهنگی و برنامه‌ریزی، پرسش و پاسخ،
+      درخواست و پیگیری، تشکر و تعامل، سفارش و امور مالی) + پیام‌های فقط عکس
+      به دسته «عکس و مستندات» می‌روند؛ دسته‌های پیام‌های قبلی هنگام اجرا
+      به‌روز می‌شوند (اگر قوانین سفارشی ذخیره نشده باشد)
+    - گزارش تعاملی نسخه ۵: گروه‌بندی و مرتب‌سازی دلخواه (موضوع / تاریخ ارسال
+      شمسی / فرستنده)، فیلتر تاریخ، حالت انتخاب و حذف گروهی، حذف تک پیام با
+      همگام‌سازی به پایگاه داده، حالت ویرایش (متن، عنوان، «موضوع گزارش» و دسته
+      هر پیام)، ذخیره نسخه ویرایش‌شده و خروجی پاورپوینت با ۴ تم، فرمت ۱۶:۹ یا
+      ۴:۳ و شامل عکس‌ها (کتابخانه داخل فایل گزارش جاسازی شده — آفلاین)
+    - اندپوینت‌های جدید: POST /api/messages/delete (حذف پیام‌های انتخابی از
+      پایگاه داده) و POST /api/messages/category (تغییر دسته از داخل گزارش)
 
 امکانات نسخه ۴.۶:
     - «گرفتن خروجی جداگانه»: هر بار یک فایل HTML جدید با تاریخ و ساعت ساخته
@@ -55,7 +72,13 @@ from collections import Counter
 from flask import Flask, jsonify, render_template, request, send_from_directory
 
 from bale_client import BaleBotError, BaleClient
-from categorizer import Categorizer, FALLBACK, parse_rules
+from categorizer import (
+    DEFAULT_RULES,
+    Categorizer,
+    FALLBACK,
+    categorize_message,
+    parse_rules,
+)
 from collector import normalize_member_update, normalize_update
 from jalali import format_ts, now_str
 from report import build_report
@@ -64,7 +87,6 @@ from storage import (
     import_csv,
     import_json,
     load_messages,
-    make_message,
     merge_messages,
     save_json,
     save_messages,
@@ -85,11 +107,7 @@ GUIDE_TEXT = (
     "فوروارد پیام‌های قدیمی گروه به این چت کاملاً درست است؛ متن، عکس، کپشن و کامنت‌ها همه ذخیره می‌شوند."
 )
 
-DEFAULT_RULES = """اطلاعیه: اطلاعیه، اعلام، هماهنگ، توجه داشته باشید، مهم
-جلسه و قرار: جلسه، قرار، حضوری، آنلاین
-پرسش و پاسخ: ؟, ?, چرا، چطور، چگونه، سوال، سؤال، مشکل، راهنمایی
-سفارش و امور مالی: سفارش، خرید، قیمت، فاکتور، پرداخت، تخفیف، واریز
-تشکر و تعامل: ممنون، تشکر، مرسی، عالی، دست شما درد نکند"""
+
 
 TYPE_LABELS = {
     "private": "چت خصوصی",
@@ -98,7 +116,16 @@ TYPE_LABELS = {
     "channel": "کانال",
 }
 
-DEMO_MESSAGES = [
+# ---------- پیام‌های نمونه (نسخه ۵: کاملاً حذف شدند) ----------
+#
+# نسخه‌های قبل دکمه «افزودن پیام نمونه» داشتند که داده تستی به پایگاه داده
+# می‌ریخت. طبق درخواست کاربر، این قابلیت کلاً حذف شد و امضای همان پیام‌های
+# نمونه اینجا نگه داشته می‌شود تا اگر در پایگاه داده کاربر باقی مانده باشند،
+# هنگام اجرای نسخه ۵ به‌طور خودکار پیدا و حذف شوند.
+
+DEMO_TITLE = "گروه مشارکت های مردمی (نمونه)"
+
+DEMO_SIGNATURES = {
     ("علی رضایی", "اعلامیه: جلسه هماهنگی گروه فردا ساعت ۱۰ برگزار می‌شود"),
     ("مریم احمدی", "سلام، چطور می‌توانم در پروژه محله شرکت کنم؟"),
     ("حسین کریمی", "ممنون از اطلاع‌رسانی، حتماً حضور دارم"),
@@ -109,7 +136,19 @@ DEMO_MESSAGES = [
     ("مریم احمدی", "عالی بود، دست شما درد نکند"),
     ("زهرا موسوی", "قیمت پوسترها با تخفیف توافق شد"),
     ("سارا نوری", "قرار ما ساعت ۱۶ در فرمانداری است"),
-]
+}
+
+
+def is_demo_message(msg):
+    """تشخیص پیام نمونه/تستی قدیمی برای حذف خودکار از پایگاه داده"""
+    if msg.get("update_id") is not None:
+        return False  # پیام واقعی دریافتی از بات هرگز update_id ندارد = None نمی‌ماند
+    if msg.get("media"):
+        return False
+    if str(msg.get("chat_title") or "") == DEMO_TITLE:
+        return True
+    key = (str(msg.get("sender_name") or ""), str(msg.get("text") or ""))
+    return key in DEMO_SIGNATURES
 
 
 class AppState:
@@ -153,6 +192,47 @@ class AppState:
         self._load_raw()
         self._load_exports()
         self._load_settings()
+        self._startup_cleanup()
+
+    # ---------- پاک‌سازی خودکار هنگام اجرا (نسخه ۵) ----------
+
+    def _startup_cleanup(self):
+        """۱) حذف خودکار پیام‌های نمونه/تستی قدیمی از پایگاه داده
+        ۲) به‌روزرسانی دسته‌ها با قوانین پیش‌فرض جدید (اگر کاربر قوانین سفارشی
+        ذخیره نکرده باشد) — دسته‌بندی بر اساس داده‌های موجود انجام می‌شود
+        """
+        removed = [m for m in self.messages if is_demo_message(m)]
+        if removed:
+            self.messages = [
+                m for m in self.messages if not is_demo_message(m)
+            ]
+            try:
+                save_messages(self.messages, MESSAGES_PATH)
+            except OSError:
+                pass
+        changed = 0
+        if not self.rules_saved:
+            for m in self.messages:
+                new_cat = categorize_message(self.categorizer, m)
+                if new_cat != m.get("category"):
+                    m["category"] = new_cat
+                    changed += 1
+            if changed:
+                try:
+                    save_messages(self.messages, MESSAGES_PATH)
+                except OSError:
+                    pass
+        if removed:
+            self.add_log(
+                f"{len(removed)} پیام نمونه/تستی قدیمی از پایگاه داده حذف شد — "
+                "قابلیت پیام نمونه در نسخه ۵ کلاً حذف شده است",
+                "warn",
+            )
+        if changed:
+            self.add_log(
+                f"دسته‌بندی {changed} پیام با قوانین پیش‌فرض جدید به‌روز شد",
+                "info",
+            )
 
     # ---------- فهرست خروجی‌های جداگانه (نسخه ۴.۶) ----------
 
@@ -913,7 +993,7 @@ def _recover_from_raw(client):
                 _download_media(client, msg)
             except Exception:
                 pass
-        msg["category"] = S.categorizer.categorize(cat_text) if cat_text else FALLBACK
+        msg["category"] = categorize_message(S.categorizer, msg)
         if _upsert_message(msg):
             recovered += 1
         with S.lock:
@@ -1023,9 +1103,7 @@ def _store_update(client, upd, force_all=False, live=False):
         if n:
             S.add_log(f"{n} فایل رسانه ذخیره شد", "info")
 
-    msg["category"] = (
-        S.categorizer.categorize(cat_text) if cat_text else FALLBACK
-    )
+    msg["category"] = categorize_message(S.categorizer, msg)
 
     _upsert_message(msg)
     with S.lock:
@@ -1282,8 +1360,7 @@ def api_rules():
         S.categorizer = Categorizer(rules)
         S.rules_saved = True
         for m in S.messages:
-            t = (m.get("text") or m.get("caption") or "").strip()
-            m["category"] = S.categorizer.categorize(t) if t else FALLBACK
+            m["category"] = categorize_message(S.categorizer, m)
         save_messages(S.messages, MESSAGES_PATH)
     S.add_log(f"{len(rules)} دسته فعال و بر {len(S.messages)} پیام اعمال شد", "info")
     _save_settings()
@@ -1390,37 +1467,88 @@ def api_import():
     return jsonify(ok=True, added=added, raw=len(raw_updates))
 
 
-@app.route("/api/demo", methods=["POST"])
-def api_demo():
-    """افزودن پیام‌های نمونه برای پیش‌نمایش داشبورد و گزارش"""
-    data = request.get_json(silent=True) or {}
-    n = max(1, min(30, int(data.get("count") or 10)))
-    added = 0
-    with S.lock:
-        title = S.chat_title or "گروه مشارکت های مردمی (نمونه)"
-        base = len(S.messages)
-        demo_id = 990000 + base
-        for i in range(n):
-            name, text = DEMO_MESSAGES[(base + i) % len(DEMO_MESSAGES)]
-            msg = make_message(
-                sender_name=name,
-                chat_title=title,
-                text=text,
-                date=int(time.time()) - (n - i) * 420,
-            )
-            msg["category"] = S.categorizer.categorize(text)
-            S.messages.append(msg)
-            added += 1
-        save_messages(S.messages, MESSAGES_PATH)
-    S.add_log(f"{added} پیام نمونه برای تست اضافه شد", "info")
-    return jsonify(ok=True, added=added)
-
-
 @app.route("/api/messages", methods=["GET"])
 def api_messages():
     with S.lock:
         msgs = list(S.messages)
     return jsonify(ok=True, count=len(msgs), messages=msgs[-200:])
+
+
+def _parse_msg_ids(raw_ids):
+    """تبدیل شناسه‌های «chat_id:message_id» به مجموعه جفت‌ها"""
+    want = set()
+    for x in (raw_ids or [])[:3000]:
+        s = str(x or "")
+        if ":" not in s:
+            continue
+        cid, _, mid = s.rpartition(":")
+        if cid and mid and mid != "None":
+            want.add((cid, mid))
+    return want
+
+
+@app.route("/api/messages/delete", methods=["POST"])
+def api_messages_delete():
+    """حذف پیام‌های انتخابی از پایگاه داده (از داخل گزارش تعاملی)
+
+    ورودی: {"ids": ["chat_id:message_id", ...]}
+    بعد از حذف، گزارش زنده هم به‌طور خودکار بازسازی می‌شود.
+    """
+    data = request.get_json(silent=True) or {}
+    want = _parse_msg_ids(data.get("ids"))
+    if not want:
+        return jsonify(ok=False, error="هیچ شناسه معتبری ارسال نشد"), 400
+    removed = 0
+    with S.lock:
+        before = len(S.messages)
+
+        def _keep(m):
+            k = (str(m.get("chat_id")), str(m.get("message_id")))
+            return k not in want
+
+        S.messages = [m for m in S.messages if _keep(m)]
+        removed = before - len(S.messages)
+        try:
+            save_messages(S.messages, MESSAGES_PATH)
+        except OSError as exc:
+            S.add_log(f"ذخیره پس از حذف پیام ناموفق بود: {exc}", "error")
+    if removed:
+        S.add_log(f"{removed} پیام با انتخاب کاربر از گزارش حذف شد", "warn")
+        _maybe_auto_report(force=True)
+    return jsonify(ok=True, removed=removed)
+
+
+@app.route("/api/messages/category", methods=["POST"])
+def api_messages_category():
+    """تغییر دسته پیام‌های انتخابی (از حالت ویرایش گزارش)
+
+    ورودی: {"ids": ["chat_id:message_id", ...], "category": "نام دسته"}
+    """
+    data = request.get_json(silent=True) or {}
+    want = _parse_msg_ids(data.get("ids"))
+    category = str(data.get("category") or "").strip()[:60]
+    if not want:
+        return jsonify(ok=False, error="هیچ شناسه معتبری ارسال نشد"), 400
+    if not category:
+        return jsonify(ok=False, error="نام دسته خالی است"), 400
+    changed = 0
+    with S.lock:
+        for m in S.messages:
+            k = (str(m.get("chat_id")), str(m.get("message_id")))
+            if k in want:
+                m["category"] = category
+                changed += 1
+        if changed:
+            try:
+                save_messages(S.messages, MESSAGES_PATH)
+            except OSError as exc:
+                S.add_log(f"ذخیره پس از تغییر دسته ناموفق بود: {exc}", "error")
+    if changed:
+        S.add_log(
+            f"دسته {changed} پیام به «{category}» تغییر کرد (از گزارش)", "info",
+        )
+        _maybe_auto_report(force=True)
+    return jsonify(ok=True, changed=changed)
 
 
 # ---------------- گزارش ----------------
